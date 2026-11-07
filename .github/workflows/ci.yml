@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 3 * * *" # nightly: the larger fault campaign
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - run: go vet ./...
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.6.0
+          install-mode: goinstall # built with this Go, so it accepts go.mod's version
+      - name: test (fixed seeds; 200 seeds nightly)
+        run: go test -race -timeout 30m ./...
+        env:
+          COVE_SEEDS: ${{ github.event_name == 'schedule' && '200' || '10' }}
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t gitcove .
+      - name: smoke test
+        run: |
+          docker run --rm gitcove token list
+          docker run --rm --entrypoint test gitcove -x /usr/libexec/git-core/git-http-backend

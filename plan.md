@@ -57,22 +57,22 @@ A milestone is done when all of these hold:
 
 Checks that don't apply yet are skipped until the milestone that introduces their feature.
 
-### Proposed code layout
+### Code layout
 
-This layout is a suggestion to settle in milestone 1.
+Settled in milestone 1. Packages not built yet are listed where they will go.
 
 ```
 cmd/cove/            server and CLI in one binary
 internal/ghclient/   GitHub API behind one interface
 internal/gitstore/   bare repos, refs, hooks, http-backend
 internal/store/      SQLite, migrations
-internal/sync/       backfill, polling, webhooks
+internal/mirror/     sync loop: backfill, polling, webhooks (not `sync`, which shadows the standard library)
 internal/outbox/     item life-cycle, marker, ordering
 internal/replay/     plan, comparison, writer, rate budget
 internal/health/     probes and mode decisions
 internal/agent/      developer-machine agent
 internal/web/        server-rendered interface
-internal/auth/       GitCove tokens, user tokens
+internal/auth/       user tokens (milestone 3); GitCove tokens live in internal/store
 fakehub/             fault-injecting GitHub stand-in
 ```
 
@@ -103,16 +103,18 @@ Tasks:
 
 Tasks:
 
-- [ ] Go module `github.com/tabaak/gitcove`, build, lint, unit-test setup, Dockerfile, and CI for the project itself.
-- [ ] SQLite in WAL mode with migrations. Initial tables: `events`, `repos`, `actors`, `outbox`, `id_map`, `conflicts`, `sync_cursors`, `tokens`, `audit_log`.
-- [ ] GitHub client behind one interface: App JWT, installation tokens with refresh, ETag support, and a response-header-aware rate limiter.
-- [ ] Git store: bare repos, fetch into `refs/gitcove/github/*`, served refs kept separate, `git http-backend` over HTTPS.
-- [ ] GitCove tokens, hashed, issued and revoked from the admin CLI. Admin assigns each token's repo access by hand.
-- [ ] Config, structured logging, admin CLI skeleton, and a `/status` endpoint.
-- [ ] Basic health check with a Git probe and an API probe.
-- [ ] `fakehub` v1: app authentication, repo listing and Git smart HTTP from fixtures, plus a seeded fault hook for down, 500s and timeouts.
+- [x] Go module `github.com/tabaak/gitcove`, build, lint, unit-test setup, Dockerfile, and CI for the project itself.
+- [x] SQLite in WAL mode with migrations. Initial tables: `events`, `repos`, `actors`, `outbox`, `id_map`, `conflicts`, `sync_cursors`, `tokens`, `audit_log`, plus `token_repos` for each token's repo access.
+- [x] GitHub client behind one interface: App JWT, installation tokens with refresh, ETag support, and a response-header-aware rate limiter.
+- [x] Git store: bare repos, fetch into `refs/gitcove/github/*`, served refs kept separate, `git http-backend` over HTTPS.
+- [x] GitCove tokens, hashed, issued and revoked from the admin CLI. Admin assigns each token's repo access by hand.
+- [x] Config, structured logging, admin CLI skeleton, and a `/status` endpoint.
+- [x] Basic health check with a Git probe and an API probe.
+- [x] `fakehub` v1: app authentication, repo listing and Git smart HTTP from fixtures, plus a seeded fault hook for down, 500s and timeouts.
 
-**Exit:** a repo can be cloned from GitCove with GitHub blocked, and with `fakehub` breaking the connection mid-fetch GitCove recovers on the next cycle.
+**Exit:** a repo can be cloned from GitCove with GitHub blocked, and with `fakehub` breaking the connection mid-fetch GitCove recovers on the next cycle. *Met: `TestCloneWhileGitHubDown` and `TestRecoversFromCutFetch`, plus a seeded fault campaign (10 seeds per CI run and 200 nightly; all 200 pass locally with `-race`). Also checked live: `cove sync` mirrored `gitcove-sandbox/cove-spike` with the read-only App, and a clone worked with GitHub unreachable.*
+
+Notes: `fakehub` builds its repo objects from the recorded `create-repo` response. The other recorded fixtures get converted when their endpoints are added. Milestone 0 recorded no installation-token or repo-listing responses, so those follow GitHub's documented shape.
 
 ## 6. Milestone 2: code failover and replay (about 2 weeks)
 

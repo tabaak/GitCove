@@ -1,0 +1,22 @@
+version: "2"
+
+linters:
+  settings:
+    errcheck:
+      # Errors that are safe to drop: cleanup paths and writes to an HTTP client that may have gone.
+      exclude-functions:
+        - (*database/sql.DB).Close
+        - (*database/sql.Tx).Rollback
+        - (*database/sql.Rows).Close
+        - (*github.com/tabaak/gitcove/internal/store.Store).Close
+        - (io.ReadCloser).Close
+        - (net.Conn).Close
+        - (net/http.ResponseWriter).Write
+        - (*net/http.Server).Shutdown
+        - (*encoding/json.Encoder).Encode
+        - crypto/rand.Read # never fails since Go 1.24
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - io.Copy
+        - os.RemoveAll
