@@ -103,7 +103,7 @@ Tasks:
 
 Tasks:
 
-- [ ] Go module, build, lint, unit-test setup, Dockerfile, and CI for the project itself.
+- [ ] Go module `github.com/tabaak/gitcove`, build, lint, unit-test setup, Dockerfile, and CI for the project itself.
 - [ ] SQLite in WAL mode with migrations. Initial tables: `events`, `repos`, `actors`, `outbox`, `id_map`, `conflicts`, `sync_cursors`, `tokens`, `audit_log`.
 - [ ] GitHub client behind one interface: App JWT, installation tokens with refresh, ETag support, and a response-header-aware rate limiter.
 - [ ] Git store: bare repos, fetch into `refs/gitcove/github/*`, served refs kept separate, `git http-backend` over HTTPS.
