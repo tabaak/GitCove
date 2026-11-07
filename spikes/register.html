@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Register spike Apps</title>
+<style>body{font:16px system-ui;margin:2rem;max-width:40rem}</style>
+<h1>Register cove-ro and cove-rw</h1>
+<p>Creates a private GitHub App in your org from a manifest. Do it once for each App.
+After you confirm on GitHub, the browser goes to <code>localhost:8765/?code=...&amp;state=ro</code>.
+Nothing listens there, so copy the code from the address bar and run <code>./convert.sh ro CODE</code>. The code is valid for one hour.</p>
+<p>Org <input id="org"> App <select id="kind"><option>ro</option><option>rw</option></select>
+<button onclick="go()">Create on GitHub</button></p>
+<form id="f" method="post"><input type="hidden" name="manifest" id="m"></form>
+<script>
+// App names are unique across all of GitHub, so the org name is added to them.
+const perms = {
+  ro: {contents: "read", issues: "read", pull_requests: "read", metadata: "read", members: "read"},
+  rw: {contents: "write", issues: "write", pull_requests: "write", metadata: "read"} // no workflows: spike W adds it later
+};
+function go() {
+  const org = document.getElementById("org").value.trim(), k = document.getElementById("kind").value;
+  const m = {
+    name: `cove-${k}-${org}`, url: `https://github.com/${org}`, public: false,
+    redirect_url: "http://localhost:8765/", callback_urls: ["http://localhost:8765/callback"],
+    default_permissions: perms[k]
+  };
+  document.getElementById("m").value = JSON.stringify(m);
+  const f = document.getElementById("f");
+  f.action = `https://github.com/organizations/${encodeURIComponent(org)}/settings/apps/new?state=${k}`;
+  f.submit();
+}
+</script>

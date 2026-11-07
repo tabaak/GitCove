@@ -1,0 +1,53 @@
+{
+  "content": {
+    "name": "t.yml",
+    "path": ".github/workflows/t.yml",
+    "sha": "25187c94f05e2a6bcf3b008b9ff7c87a9636b02d",
+    "size": 95,
+    "url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/contents/.github/workflows/t.yml?ref=main",
+    "html_url": "https://github.com/gitcove-sandbox/cove-spike/blob/main/.github/workflows/t.yml",
+    "git_url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/git/blobs/25187c94f05e2a6bcf3b008b9ff7c87a9636b02d",
+    "download_url": "https://raw.githubusercontent.com/gitcove-sandbox/cove-spike/main/.github/workflows/t.yml?token=BPZYSZATNKJO67FXAAPIPTDK546LM",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/gitcove-sandbox/cove-spike/contents/.github/workflows/t.yml?ref=main",
+      "git": "https://api.github.com/repos/gitcove-sandbox/cove-spike/git/blobs/25187c94f05e2a6bcf3b008b9ff7c87a9636b02d",
+      "html": "https://github.com/gitcove-sandbox/cove-spike/blob/main/.github/workflows/t.yml"
+    }
+  },
+  "commit": {
+    "sha": "75d1fe4549268cbf9331a9a07beefb35642cc504",
+    "node_id": "C_kwDOVmTaoNoAKDc1ZDFmZTQ1NDkyNjhjYmY5MzMxYTlhMDdiZWVmYjM1NjQyY2M1MDQ",
+    "url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/git/commits/75d1fe4549268cbf9331a9a07beefb35642cc504",
+    "html_url": "https://github.com/gitcove-sandbox/cove-spike/commit/75d1fe4549268cbf9331a9a07beefb35642cc504",
+    "author": {
+      "name": "tabak!",
+      "email": "viktorr200830@gmail.com",
+      "date": "2026-11-07T14:58:02Z"
+    },
+    "committer": {
+      "name": "tabak!",
+      "email": "viktorr200830@gmail.com",
+      "date": "2026-11-07T14:58:02Z"
+    },
+    "tree": {
+      "sha": "1947ddd39f09e59ce9961e0dd977996dbd52985a",
+      "url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/git/trees/1947ddd39f09e59ce9961e0dd977996dbd52985a"
+    },
+    "message": "add t.yml",
+    "parents": [
+      {
+        "sha": "f850b9a5931b95e1e645cc0480c2b15bbdc10d7d",
+        "url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/git/commits/f850b9a5931b95e1e645cc0480c2b15bbdc10d7d",
+        "html_url": "https://github.com/gitcove-sandbox/cove-spike/commit/f850b9a5931b95e1e645cc0480c2b15bbdc10d7d"
+      }
+    ],
+    "verification": {
+      "verified": false,
+      "reason": "unsigned",
+      "signature": null,
+      "payload": null,
+      "verified_at": null
+    }
+  }
+}

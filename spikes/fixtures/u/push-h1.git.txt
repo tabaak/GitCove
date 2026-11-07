@@ -1,0 +1,7 @@
+exit 0
+remote: 
+remote: Create a pull request for 'u-test' on GitHub by visiting:        
+remote:      https://github.com/gitcove-sandbox/cove-spike/pull/new/u-test        
+remote: 
+To https://github.com/gitcove-sandbox/cove-spike.git
+ * [new branch]      u-test -> u-test

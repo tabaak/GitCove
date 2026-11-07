@@ -1,0 +1,42 @@
+{
+  "id": 5813066778,
+  "node_id": "PRR_kwDOVmTaoM8AAAABWnxcGg",
+  "user": {
+    "login": "tabaak",
+    "id": 200509796,
+    "node_id": "U_kgDOC_OJZA",
+    "avatar_url": "https://avatars.githubusercontent.com/u/200509796?u=8e77dee629089610e1d9483def1c6541fe50483f&v=4",
+    "gravatar_id": "",
+    "url": "https://api.github.com/users/tabaak",
+    "html_url": "https://github.com/tabaak",
+    "followers_url": "https://api.github.com/users/tabaak/followers",
+    "following_url": "https://api.github.com/users/tabaak/following{/other_user}",
+    "gists_url": "https://api.github.com/users/tabaak/gists{/gist_id}",
+    "starred_url": "https://api.github.com/users/tabaak/starred{/owner}{/repo}",
+    "subscriptions_url": "https://api.github.com/users/tabaak/subscriptions",
+    "organizations_url": "https://api.github.com/users/tabaak/orgs",
+    "repos_url": "https://api.github.com/users/tabaak/repos",
+    "events_url": "https://api.github.com/users/tabaak/events{/privacy}",
+    "received_events_url": "https://api.github.com/users/tabaak/received_events",
+    "type": "User",
+    "user_view_type": "public",
+    "site_admin": false
+  },
+  "body": "review via user token",
+  "state": "COMMENTED",
+  "html_url": "https://github.com/gitcove-sandbox/cove-spike/pull/11#pullrequestreview-5813066778",
+  "pull_request_url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/pulls/11",
+  "author_association": "MEMBER",
+  "is_copilot_code_review": false,
+  "copilot_code_review_effort": null,
+  "_links": {
+    "html": {
+      "href": "https://github.com/gitcove-sandbox/cove-spike/pull/11#pullrequestreview-5813066778"
+    },
+    "pull_request": {
+      "href": "https://api.github.com/repos/gitcove-sandbox/cove-spike/pulls/11"
+    }
+  },
+  "submitted_at": "2026-11-07T15:02:30Z",
+  "commit_id": "92d4bb456ffffd74a4a581bd3e020dc4e6ec69e9"
+}

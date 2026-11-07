@@ -1,0 +1,53 @@
+{
+  "content": {
+    "name": "z2.yml",
+    "path": ".github/workflows/z2.yml",
+    "sha": "301b07520749e1da909f0623f5afad07d5c131be",
+    "size": 22,
+    "url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/contents/.github/workflows/z2.yml?ref=main",
+    "html_url": "https://github.com/gitcove-sandbox/cove-spike/blob/main/.github/workflows/z2.yml",
+    "git_url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/git/blobs/301b07520749e1da909f0623f5afad07d5c131be",
+    "download_url": "https://raw.githubusercontent.com/gitcove-sandbox/cove-spike/main/.github/workflows/z2.yml?token=CULC7AQXUSIGMYR6T6I47CDK546BXAVPNFXHG5DBNRWGC5DJN5XF62LEZYFLI4O4WFUW443UMFWGYYLUNFXW4X3UPFYGLN2JNZ2GKZ3SMF2GS33OJFXHG5DBNRWGC5DJN5XA",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/gitcove-sandbox/cove-spike/contents/.github/workflows/z2.yml?ref=main",
+      "git": "https://api.github.com/repos/gitcove-sandbox/cove-spike/git/blobs/301b07520749e1da909f0623f5afad07d5c131be",
+      "html": "https://github.com/gitcove-sandbox/cove-spike/blob/main/.github/workflows/z2.yml"
+    }
+  },
+  "commit": {
+    "sha": "1cb952552f4b9cd42fb035b2ab75981a1c4b8bf3",
+    "node_id": "C_kwDOVmTaoNoAKDFjYjk1MjU1MmY0YjljZDQyZmIwMzViMmFiNzU5ODFhMWM0YjhiZjM",
+    "url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/git/commits/1cb952552f4b9cd42fb035b2ab75981a1c4b8bf3",
+    "html_url": "https://github.com/gitcove-sandbox/cove-spike/commit/1cb952552f4b9cd42fb035b2ab75981a1c4b8bf3",
+    "author": {
+      "name": "cove-rw-gitcove-sandbox[bot]",
+      "email": "353775490+cove-rw-gitcove-sandbox[bot]@users.noreply.github.com",
+      "date": "2026-11-07T14:55:26Z"
+    },
+    "committer": {
+      "name": "GitHub",
+      "email": "noreply@github.com",
+      "date": "2026-11-07T14:55:26Z"
+    },
+    "tree": {
+      "sha": "8a42a604bc0d661fc4b77885130b59305b39c3c8",
+      "url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/git/trees/8a42a604bc0d661fc4b77885130b59305b39c3c8"
+    },
+    "message": "z2",
+    "parents": [
+      {
+        "sha": "1802cc7126b58f5552fd5bdafdd034c053c54e5c",
+        "url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/git/commits/1802cc7126b58f5552fd5bdafdd034c053c54e5c",
+        "html_url": "https://github.com/gitcove-sandbox/cove-spike/commit/1802cc7126b58f5552fd5bdafdd034c053c54e5c"
+      }
+    ],
+    "verification": {
+      "verified": true,
+      "reason": "valid",
+      "signature": "-----BEGIN PGP SIGNATURE-----\n\nwsFcBAABCAAQBQJq7zveCRC1aQ7uu5UhlAAAN+IQAE/FJjESqzeYJe8WHfBHdBqr\ngdHOrrFfUneuv9me7bjUzHECkG07aFQkTgs2d1Z9ESMzkvkWPWuzzh2P/EZo1SqH\nvkux/+axbUzoBzN1tD+r9TowGa86h8KsLpdCB33aI2YuCnnOaQ0w5W4ZH62VPyB7\nut1s1N/Q7FqDG2uyT7rRwFNJ8WHf0wCSo34rFPIp+6+s1rfdJowcAqYnt97STNeH\njxV87JzjEqmrGEtsZlYC9DYNWt+kOYoOp9SoskKNeN8FIhhCOlj03K/ixZfIdHSf\nupX9e7D+5IId/lYlqNp4MyD1p1gDBPnMnkhzZ6jNhAjtnotmuwJimdyDGiPT2ubl\nYPKMRCSNh1wQ+fDUX6sdnhMk+ifimDpChJN5bYU0yy6N1K2ufJEqaYqC0C15dkg/\n5TGPM3pQ1l8vxkPxbkoF+I6yndTeny5R/VRD+c01oDqtKVOzXNOIXYmpNJ2cCiT3\nP3diIO7WaBg8KL7eCeYHnT2KkqALnoQ4ZOFgxhfq2TTEVHFt8q0fp4NSAc/58x7Z\naJYDz2IhNQbAC0vvRnQP5gJadVdogCdh6eMZWM+nKaskkh49dKFPYRPbEBp1BANS\nHfAMlUgLSfEz/vZyL9MPU1ZM+Ps1QTRjmep1t75mpQGJZUsrECxKGrQwflLSXNRa\nAA3ME57lV9k9L/1g3KCn\n=AsER\n-----END PGP SIGNATURE-----\n",
+      "payload": "tree 8a42a604bc0d661fc4b77885130b59305b39c3c8\nparent 1802cc7126b58f5552fd5bdafdd034c053c54e5c\nauthor cove-rw-gitcove-sandbox[bot] <353775490+cove-rw-gitcove-sandbox[bot]@users.noreply.github.com> 1794063326 +0000\ncommitter GitHub <noreply@github.com> 1794063326 +0000\n\nz2",
+      "verified_at": "2026-11-07T14:55:27Z"
+    }
+  }
+}

@@ -1,0 +1,3 @@
+exit 0
+To https://github.com/gitcove-sandbox/cove-spike.git
+   fbdd49a..b534788  inline-test -> inline-test

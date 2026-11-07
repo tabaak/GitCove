@@ -1,0 +1,7 @@
+exit 0
+remote: 
+remote: Create a pull request for 'inline-test' on GitHub by visiting:        
+remote:      https://github.com/gitcove-sandbox/cove-spike/pull/new/inline-test        
+remote: 
+To https://github.com/gitcove-sandbox/cove-spike.git
+ * [new branch]      inline-test -> inline-test

@@ -82,20 +82,20 @@ fakehub/             fault-injecting GitHub stand-in
 
 Tasks:
 
-- [ ] Create a sandbox organisation (a Team plan if possible, so rulesets work on private repos), a private repo `cove-spike`, and two private Apps from a manifest: `cove-ro` and `cove-rw`.
-- [ ] **Spike M:** post a comment, issue and PR with a hidden marker. Check the marker survives in the raw body. Measure how long a filtered listing (`state=all`, `since`, author) takes to show a new item after a `201`. Simulate a lost response.
-- [ ] **Spike W:** push branches whose commits, or only whose tree, differ in `.github/workflows`, with and without the `workflows` permission, over Git and REST, including a stale base.
-- [ ] **Spike R:** post comments in a loop until GitHub blocks. Record the count, the headers and whether `Retry-After` appears.
-- [ ] **Spike U:** run the user authorisation flow. Post a comment, a review and an approval with a user token. Record token and refresh token lifetimes, and whether the approval counts towards branch protection.
-- [ ] **Spike I:** post an inline review comment with an older `commit_id`. Check how it displays after the branch changes, and what happens if the commit isn't on GitHub.
-- [ ] **Spike A:** check whether a read-only App sees repo and organisation rules, and how `protected` behaves.
-- [ ] **Spike E:** read-only sync, `refs/pull/*` fetch, collaborator access, and whether bot PRs trigger CI. Use the corrected push command from the research report.
-- [ ] Test that a replayed PR saying "Fixes `#431`" closes the issue when merged.
-- [ ] Record real API responses from these spikes as `fakehub` fixtures.
-- [ ] Settle decisions D1 and D2 (section 11), and reserve the organisation name and domain.
-- [ ] Write a short decision record listing every design point the spikes changed.
+- [x] Create a sandbox organisation on GitHub Team (needed, not optional: rulesets and branch protection on private repos), a private repo `cove-spike`, and two private Apps from a manifest. App names are global, so they are `cove-ro-gitcove-sandbox` and `cove-rw-gitcove-sandbox`.
+- [x] **Spike M:** confirmed. Comment listings showed new comments at once; the filtered issue listing lagged 2.6–5.1 s. All three writes with lost responses were created.
+- [x] **Spike W:** refuted. The check is tree-based: without `workflows`, a push is accepted only if its workflow files match some current branch tip.
+- [x] **Spike R:** not tripped. 521 content writes in under 16 minutes all succeeded, and no header reports the content budget. Keep the documented budget; the block and `Retry-After` path is tested only in `fakehub`.
+- [x] **Spike U:** confirmed, using device flow. Tokens last 8 h and refresh tokens about 181 days, and refresh tokens rotate. Approvals count towards branch protection, and GitHub refuses an approval for any commit but the head.
+- [x] **Spike I:** confirmed. Older commits are accepted and show as "Outdated"; commits not in the PR get a 422.
+- [x] **Spike A:** confirmed. A read-only App sees repo and org rules through `rules/branches`.
+- [x] **Spike E:** confirmed. Collaborators are readable, `refs/pull` fetches, and App pushes and PRs start CI.
+- [x] Test that a replayed PR saying "Fixes `#431`" closes the issue when merged: confirmed.
+- [x] Record real API responses from these spikes as `fakehub` fixtures: raw exchanges are in `spikes/fixtures/`; converting them to `fakehub`'s format is milestone 1 work.
+- [x] Settle decisions D1 and D2 (section 11): GitCove / `cove`, and Apache 2.0. Nothing needs reserving: the repo and image live under the hosting account, and any website goes on `gitcove.vokh.dev`.
+- [x] Write a short decision record listing every design point the spikes changed: `spikes/RESULTS.md`, and section 15 of the design.
 
-**Exit:** each spike has a written result. Design sections affected by a failed spike are updated. If spike U fails, the plan continues with App-only attribution.
+**Exit:** each spike has a written result. Design sections affected by a failed spike are updated. If spike U fails, the plan continues with App-only attribution. *Spike U passed, so D3 is now only a question of trust.*
 
 ## 5. Milestone 1: foundation (1–1.5 weeks)
 
@@ -122,13 +122,14 @@ Tasks:
 
 - [ ] Persistent mode state machine: Normal, Failover, Reconciling, Replaying. Every transition is audited and survives a restart.
 - [ ] CLI: `failover start`, `failover end`, `client setup`, `client on`, `client off` (the `url.insteadOf` rule).
-- [ ] `pre-receive` hook: reject pushes outside Failover, to protected branches, and force-pushes. `post-receive` hook: write outbox rows with the old and new commit IDs.
-- [ ] Protected branch detection per spike A, plus an admin list and an emergency allow setting.
+- [ ] `pre-receive` hook: reject pushes outside Failover, to protected branches, and force-pushes. The rejection says how to push to a branch and open a PR instead. `post-receive` hook: write outbox rows with the old and new commit IDs.
+- [ ] Protected branch detection per spike A (`protected` true or `rules/branches` non-empty, rule types stored, never the classic protection endpoint), plus an admin list and an emergency allow setting. GitCove copies GitHub's protection and is no stricter: an unprotected default branch accepts pushes. If protection is unknown, treat the branch as protected.
 - [ ] Served-versus-GitHub ref rules: a branch with unreplayed work stays where developers left it, and others follow GitHub.
 - [ ] Reconciling: catch-up fetch, then build the replay plan.
 - [ ] Replay plan CLI with dry run, a list of every branch to push, and admin approval.
 - [ ] Commit history comparison (section 8.6): already on GitHub, default or deploy branch, fast-forward, diverged. Fallback branch `gitcove/<branch>-<timestamp>` and PR.
-- [ ] PR-only replay for default and deploy branches, with the setting to turn it off. Workflow-file check per spike W.
+- [ ] PR-only replay for default and deploy branches, protected or not, with the setting to turn it off. Workflow-file check per spike W: in the plan, compare each branch's `.github/workflows` tree with every current tip on GitHub, and send mismatches to `conflicts` with the reason.
+- [ ] Replay PRs ask for a merge commit. If GitHub squash- or rebase-merges one, save the old served tip under `refs/gitcove/history/` (only this case; general history refs stay in milestone 7), reset the served branch to GitHub's, audit it, and tell developers to rebase.
 - [ ] Outbox life-cycle for ref items, crash recovery, resume, and pause on a second outage.
 - [ ] `fakehub`: push endpoints, branch protection responses, minimal PR creation, and faults for kill points, repeat outages, divergent branches and developers pushing the same commits first.
 
@@ -144,11 +145,11 @@ Tasks:
 - [ ] Backfill and polling sync with saved cursors and the fixed-`since` or stable-first-page ETag approach (section 7).
 - [ ] Server-rendered web interface to browse repos, issues, PRs, comments and reviews, with a mode banner and the age of the copy.
 - [ ] Web writes: comment, new issue with a temporary ID (`L-n`), labels, close and reopen, and edits.
-- [ ] Metadata outbox with the hidden marker, the full life-cycle (`pending`, `sending`, `done`, `conflict`, `uncertain`), and marker lookup by filtered listing per spike M.
+- [ ] Metadata outbox with the hidden marker, the full life-cycle (`pending`, `sending`, `done`, `conflict`, `uncertain`), and marker lookup by filtered listing per spike M, waiting at least 15 s after `sending` and rechecking twice before an issue counts as unsent.
 - [ ] Rate-limited writer: at least 1 second between writes, 60 per minute, 450 per rolling hour, a client-side write count, stop the queue on a block, and refresh installation tokens.
 - [ ] Replay ordering and dependencies (section 8.5): refs, issues, comments, labels and state, then edits. Rewrite `#L-n` references. Dependants wait on `conflict` or `uncertain` items.
 - [ ] Conflict rules (section 8.6): per-change labels, GitHub's state kept on close or reopen conflicts, GitHub's text kept on edit conflicts with the proposal posted as a comment.
-- [ ] Authorship: App attribution line by default. If decision D3 is yes, `client authorise`, encrypted refresh-token storage, and fallback to the App.
+- [ ] Authorship: App attribution line by default. If decision D3 is yes, `client authorise` through device flow, encrypted refresh-token storage with the rotated token saved in the same transaction as the refresh, and fallback to the App.
 - [ ] Basic plan screen: counts, request estimate, and the `conflicts` and `uncertain` lists.
 - [ ] `fakehub`: issue and comment endpoints with listing lag, lost responses, rate limits, and out-of-order webhooks.
 
@@ -165,13 +166,13 @@ Tasks:
 - [ ] Reviews: summary, verdict, and line comments stored with commit, path, line and side. Replies to line comments and resolved conversations stored on `review_threads`.
 - [ ] Local approvals with a per-repo count (decision D4) and approver other than the author. Local merge into the target branch, as a merge commit only (decision D5). A local merge is the only way to change a protected branch.
 - [ ] Local merge conflicts: refuse cleanly, leave nothing half-merged, and reset approvals when the head commit changes.
-- [ ] Linked issues: close them locally when a PR with a closing keyword is merged, without replaying that close as its own item, or after the GitHub merge if the milestone 0 keyword test says GitHub doesn't close them.
+- [ ] Linked issues: close them locally when a PR with a closing keyword is merged, without replaying that close as its own item. Milestone 0 confirmed GitHub closes them when the replayed PR is merged.
 - [ ] Two-state display for a PR merged locally: "Merged on GitCove" and "Open on GitHub". A PR closed on GitHub without merging goes to `conflicts`.
 - [ ] Show GitHub's last known check results read-only on mirrored PRs. Local merges don't require checks.
 - [ ] Fork PRs: read, comment and review only.
 - [ ] Interface labels "approved on GitCove, not checked by GitHub" until replay.
 - [ ] Per-PR replay in merge order, with the order listed in each PR's text. Bundle PR fallback behind a setting, to be chosen after the prototype.
-- [ ] Review replay (section 8.13): line comments anchored by commit, ordinary-comment fallback when the commit is missing, approvals only for the exact commit and only for authorised reviewers (R7), otherwise a note. Replies wait behind their parent comment, with a standalone-comment fallback if it was deleted. A conversation is resolved only if no new comments arrived on GitHub in that thread.
+- [ ] Review replay (section 8.13): line comments anchored by commit, ordinary-comment fallback when the commit is missing, approvals only for the exact commit and only for authorised reviewers (R7), otherwise a note. Replies wait behind their parent comment, with a standalone-comment fallback if it was deleted. A conversation is resolved only if no new comments arrived on GitHub in that thread. First check how resolving works through the API, which milestone 0 didn't cover.
 - [ ] Likely-duplicate detection by title, at plan time and again just before each write.
 - [ ] Full plan screen: branches, items, request estimate, duplicates, `conflicts`, `uncertain`, and why dependants wait.
 - [ ] `fakehub`: PR, review and approval endpoints, `commit_id` handling, review threads and replies, resolved conversations, stale heads, merge conflicts, a PR closed without merging, and faults for expired tokens and a moving `main`.
@@ -212,7 +213,7 @@ Tasks:
 - [ ] Hide history and GitHub refs with `hideRefs`, and test whether a client can still fetch them by commit ID. If it can, move history into a separate repository.
 - [ ] `cove restore` to `gitcove/restored-<branch>-<timestamp>`, restored branches exempt from following GitHub, and `--push` with a read-write App.
 - [ ] `cove purge`, and `orphaned` repos with an admin alert.
-- [ ] Permission sync from GitHub, with the organisation members and teams fallback if spike E says so.
+- [ ] Permission sync from GitHub through the collaborators endpoint, which spike E showed works with Metadata: read.
 - [ ] LFS detection and warnings.
 - [ ] Webhooks with HMAC verification and durable de-duplication, the weekly full scan, tombstones, and ETag polling.
 - [ ] A read-only App option.
@@ -232,7 +233,7 @@ Tasks:
 | # | Decision | Needed by | Default if undecided |
 |---|---|---|---|
 | D1 | Name: GitCove; CLI command: `cove` | Decided | GitCove / `cove` |
-| D2 | Licence | End of milestone 0 | Apache 2.0 |
+| D2 | Licence: Apache 2.0 | Decided | Apache 2.0 |
 | D3 | Whether to store users' refresh tokens so reviews appear under their names | Start of milestone 3 | No, App-only. Section 8.12 and the real approvals in 8.13 are dropped |
 | D4 | Default approvals needed for a local merge | Start of milestone 4 | 1, and not the author |
 | D5 | Whether local merges may also be squash or rebase. They would break commit-bound approvals | Start of milestone 4 | No. Merge commits only |
@@ -257,8 +258,8 @@ Every fault is seeded, so any failing run can be repeated exactly. Proposed targ
 | Risk | Response |
 |---|---|
 | Replay takes longer than estimated | Replay milestones come first. Cut from the end of the plan, never from replay |
-| Case 6: GitHub's listing lags behind a successful post | Wait and recheck, then `uncertain`. Spike M measures the lag |
-| GitHub refuses pushes touching workflow files | Spike W, a plan check, `conflicts`, and commits kept on GitCove |
+| Case 6: GitHub's listing lags behind a successful post | Spike M measured up to 5.1 s. Wait at least 15 s, recheck twice, then `uncertain` |
+| GitHub refuses pushes whose workflow files match no current branch | Spike W showed the check is tree-based. A plan check against every current tip, `conflicts`, and commits kept on GitCove |
 | `fakehub` differs from real GitHub | Build it from recorded responses, and run each milestone's smaller scenario against the sandbox organisation |
 | Replay triggers a deployment | PR-only rule for default and deploy branches, and the plan lists every branch pushed |
 | A local merge is rejected by GitHub later | Label it clearly, alert the admin, and document the rebase |

@@ -1,0 +1,1 @@
+-X POST https://api.github.com/repos/gitcove-sandbox/cove-spike/rulesets -d {"name":"rs-disabled","target":"branch","enforcement":"disabled","conditions":{"ref_name":{"include":["refs/heads/rs-disabled"],"exclude":[]}},"rules":[{"type":"deletion"}]}

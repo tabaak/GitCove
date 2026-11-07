@@ -1,0 +1,45 @@
+{
+  "id": 26760373,
+  "name": "rs-org",
+  "target": "branch",
+  "source_type": "Organization",
+  "source": "gitcove-sandbox",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "exclude": [
+
+      ],
+      "include": [
+        "refs/heads/rs-org"
+      ]
+    },
+    "repository_name": {
+      "exclude": [
+
+      ],
+      "include": [
+        "cove-spike"
+      ]
+    }
+  },
+  "rules": [
+    {
+      "type": "deletion"
+    }
+  ],
+  "node_id": "RRS_lACkVXNlcs4VFeXzzgGYVLU",
+  "created_at": "2026-11-07T15:53:04.984+01:00",
+  "updated_at": "2026-11-07T15:53:05.008+01:00",
+  "bypass_actors": [
+
+  ],
+  "_links": {
+    "self": {
+      "href": "https://api.github.com/orgs/gitcove-sandbox/rulesets/26760373"
+    },
+    "html": {
+      "href": "http://github.com/organizations/gitcove-sandbox/settings/rules/26760373"
+    }
+  }
+}

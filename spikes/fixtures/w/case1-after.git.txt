@@ -1,0 +1,7 @@
+exit 0
+remote: 
+remote: Create a pull request for 't1-after' on GitHub by visiting:        
+remote:      https://github.com/gitcove-sandbox/cove-spike/pull/new/t1-after        
+remote: 
+To https://github.com/gitcove-sandbox/cove-spike.git
+ * [new branch]      t1-after -> t1-after

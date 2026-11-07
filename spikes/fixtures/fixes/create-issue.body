@@ -1,0 +1,82 @@
+{
+  "url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/issues/8",
+  "repository_url": "https://api.github.com/repos/gitcove-sandbox/cove-spike",
+  "labels_url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/issues/8/labels{/name}",
+  "comments_url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/issues/8/comments",
+  "events_url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/issues/8/events",
+  "html_url": "https://github.com/gitcove-sandbox/cove-spike/issues/8",
+  "id": 6260494924,
+  "node_id": "I_kwDOVmTaoM8AAAABdSeSTA",
+  "number": 8,
+  "title": "fixes target",
+  "user": {
+    "login": "cove-rw-gitcove-sandbox[bot]",
+    "id": 353775490,
+    "node_id": "BOT_kgDOFRYvgg",
+    "avatar_url": "https://avatars.githubusercontent.com/u/353756659?v=4",
+    "gravatar_id": "",
+    "url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D",
+    "html_url": "https://github.com/apps/cove-rw-gitcove-sandbox",
+    "followers_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/followers",
+    "following_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/following{/other_user}",
+    "gists_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/gists{/gist_id}",
+    "starred_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/starred{/owner}{/repo}",
+    "subscriptions_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/subscriptions",
+    "organizations_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/orgs",
+    "repos_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/repos",
+    "events_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/events{/privacy}",
+    "received_events_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/received_events",
+    "type": "Bot",
+    "user_view_type": "public",
+    "site_admin": false
+  },
+  "labels": [
+
+  ],
+  "state": "open",
+  "locked": false,
+  "assignees": [
+
+  ],
+  "milestone": null,
+  "comments": 0,
+  "created_at": "2026-11-07T14:57:35Z",
+  "updated_at": "2026-11-07T14:57:35Z",
+  "closed_at": null,
+  "assignee": null,
+  "author_association": "NONE",
+  "issue_field_values": [
+
+  ],
+  "type": null,
+  "active_lock_reason": null,
+  "sub_issues_summary": {
+    "total": 0,
+    "completed": 0,
+    "percent_completed": 0
+  },
+  "issue_dependencies_summary": {
+    "blocked_by": 0,
+    "total_blocked_by": 0,
+    "blocking": 0,
+    "total_blocking": 0
+  },
+  "body": null,
+  "closed_by": null,
+  "reactions": {
+    "url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/issues/8/reactions",
+    "total_count": 0,
+    "+1": 0,
+    "-1": 0,
+    "laugh": 0,
+    "hooray": 0,
+    "confused": 0,
+    "heart": 0,
+    "rocket": 0,
+    "eyes": 0
+  },
+  "timeline_url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/issues/8/timeline",
+  "performed_via_github_app": null,
+  "state_reason": null,
+  "pinned_comment": null
+}

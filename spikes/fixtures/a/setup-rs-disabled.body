@@ -1,0 +1,38 @@
+{
+  "id": 26760369,
+  "name": "rs-disabled",
+  "target": "branch",
+  "source_type": "Repository",
+  "source": "gitcove-sandbox/cove-spike",
+  "enforcement": "disabled",
+  "conditions": {
+    "ref_name": {
+      "exclude": [
+
+      ],
+      "include": [
+        "refs/heads/rs-disabled"
+      ]
+    }
+  },
+  "rules": [
+    {
+      "type": "deletion"
+    }
+  ],
+  "node_id": "RRS_lACqUmVwb3NpdG9yec5WZNqgzgGYVLE",
+  "created_at": "2026-11-07T15:53:03.581+01:00",
+  "updated_at": "2026-11-07T15:53:03.602+01:00",
+  "bypass_actors": [
+
+  ],
+  "current_user_can_bypass": "never",
+  "_links": {
+    "self": {
+      "href": "https://api.github.com/repos/gitcove-sandbox/cove-spike/rulesets/26760369"
+    },
+    "html": {
+      "href": "https://github.com/gitcove-sandbox/cove-spike/rules/26760369"
+    }
+  }
+}

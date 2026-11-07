@@ -1,0 +1,41 @@
+### a run at 2026-11-07T14:52:58Z
+HTTP/2 201  {"id":26760366}
+HTTP/2 201  {"id":26760369}
+HTTP/2 201  {"id":26760371}
+HTTP/2 200  {"url":"https://api.github.com/repos/gitcove-sandbox/cove-spike/branches/legacy/protection"}
+HTTP/2 201  {"id":26760373}
+== read-only App
+HTTP/2 200  [{"name":"legacy","protected":true},{"name":"main","protected":false},{"name":"plain","protected":false},{"name":"rs-disabled","protected":false},{"name":"rs-linear","protected":true},{"name":"rs-org","protected":true},{"name":"rs-repo","protected":true}]
+HTTP/2 200  ["legacy","rs-linear","rs-org","rs-repo"]
+== plain
+HTTP/2 200  []
+HTTP/2 403  x-accepted-github-permissions: administration=read
+
+== legacy
+HTTP/2 200  []
+HTTP/2 403  x-accepted-github-permissions: administration=read
+
+== rs-repo
+HTTP/2 200  [{"type":"deletion","ruleset_source_type":"Repository","ruleset_source":"gitcove-sandbox/cove-spike","ruleset_id":26760366},{"type":"non_fast_forward","ruleset_source_type":"Repository","ruleset_source":"gitcove-sandbox/cove-spike","ruleset_id":26760366}]
+HTTP/2 403  x-accepted-github-permissions: administration=read
+
+== rs-disabled
+HTTP/2 200  []
+HTTP/2 403  x-accepted-github-permissions: administration=read
+
+== rs-linear
+HTTP/2 200  [{"type":"required_linear_history","ruleset_source_type":"Repository","ruleset_source":"gitcove-sandbox/cove-spike","ruleset_id":26760371}]
+HTTP/2 403  x-accepted-github-permissions: administration=read
+
+== rs-org
+HTTP/2 200  [{"type":"deletion","ruleset_source_type":"Organization","ruleset_source":"gitcove-sandbox","ruleset_id":26760373}]
+HTTP/2 403  x-accepted-github-permissions: administration=read
+
+HTTP/2 200  [{"id":26760373,"name":"rs-org","source_type":"Organization","enforcement":"active"},{"id":26760369,"name":"rs-disabled","source_type":"Repository","enforcement":"disabled"},{"id":26760371,"name":"rs-linear","source_type":"Repository","enforcement":"active"},{"id":26760366,"name":"rs-repo","source_type":"Repository","enforcement":"active"}]
+HTTP/2 403  {"message":"Resource not accessible by integration","status":"403"}
+== admin, for comparison
+HTTP/2 404  {"message":"Branch not protected","status":"404"}
+
+Expected: plain false/[]; legacy true/[]; rs-repo true/[deletion,non_fast_forward]; rs-org true/[deletion];
+rs-disabled false/[]; rs-linear ?/[required_linear_history]. The read-only App gets 403 on */protection and orgs/*/rulesets.
+Refuted if rs-repo shows protected=false, or rs-org's rules are empty.

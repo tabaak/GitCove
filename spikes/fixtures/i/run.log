@@ -1,0 +1,24 @@
+### i run at 2026-11-07T14:56:59Z
+exit 0
+remote: 
+remote: Create a pull request for 'inline-test' on GitHub by visiting:        
+remote:      https://github.com/gitcove-sandbox/cove-spike/pull/new/inline-test        
+remote: 
+To https://github.com/gitcove-sandbox/cove-spike.git
+ * [new branch]      inline-test -> inline-test
+HTTP/2 201  exit 0
+To https://github.com/gitcove-sandbox/cove-spike.git
+   fbdd49a..b534788  inline-test -> inline-test
+PR #7  c1=fbdd49ad5348e948d43c30dfb9c0e242de7f828b  c2=b5347886c9ae816092769f9621c165bbfb4b01e2 (head)
+HTTP/2 201  {"id":4502301781,"commit_id":"fbdd49ad5348e948d43c30dfb9c0e242de7f828b","original_commit_id":"fbdd49ad5348e948d43c30dfb9c0e242de7f828b","line":2,"position":2}
+HTTP/2 201  {"id":4502301898,"commit_id":"b5347886c9ae816092769f9621c165bbfb4b01e2","original_commit_id":"b5347886c9ae816092769f9621c165bbfb4b01e2","line":2,"position":2}
+HTTP/2 200  {"id":5813029382,"commit_id":"fbdd49ad5348e948d43c30dfb9c0e242de7f828b","state":"COMMENTED"}
+== commits GitHub has never seen
+HTTP/2 422  {"message":"Validation Failed","status":"422"}
+HTTP/2 422  {"message":"Validation Failed","status":"422"}
+== move the branch so the earlier comments go stale
+exit 0
+To https://github.com/gitcove-sandbox/cove-spike.git
+   b534788..2ee2c9b  inline-test -> inline-test
+HTTP/2 200  [{"body":"comment-on-old-commit","commit_id":"fbdd49ad5348e948d43c30dfb9c0e242de7f828b","original_commit_id":"fbdd49ad5348e948d43c30dfb9c0e242de7f828b","line":null,"original_line":2,"position":1,"original_position":2},{"body":"comment-on-head","commit_id":"b5347886c9ae816092769f9621c165bbfb4b01e2","original_commit_id":"b5347886c9ae816092769f9621c165bbfb4b01e2","line":null,"original_line":2,"position":1,"original_position":2},{"body":"line comment in review on c1","commit_id":"fbdd49ad5348e948d43c30dfb9c0e242de7f828b","original_commit_id":"fbdd49ad5348e948d43c30dfb9c0e242de7f828b","line":null,"original_line":2,"position":1,"original_position":2}]
+Now look at https://github.com/gitcove-sandbox/cove-spike/pull/7/files and the Conversation tab, and note how each comment is shown.

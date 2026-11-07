@@ -1,0 +1,41 @@
+{
+  "id": 5657197,
+  "client_id": "Iv23liA7pdtMN0Z5R0pv",
+  "slug": "cove-ro-gitcove-sandbox",
+  "node_id": "A_kwHOFRXl884AVlJt",
+  "owner": {
+    "login": "gitcove-sandbox",
+    "id": 353756659,
+    "node_id": "O_kgDOFRXl8w",
+    "avatar_url": "https://avatars.githubusercontent.com/u/353756659?v=4",
+    "gravatar_id": "",
+    "url": "https://api.github.com/users/gitcove-sandbox",
+    "html_url": "https://github.com/gitcove-sandbox",
+    "followers_url": "https://api.github.com/users/gitcove-sandbox/followers",
+    "following_url": "https://api.github.com/users/gitcove-sandbox/following{/other_user}",
+    "gists_url": "https://api.github.com/users/gitcove-sandbox/gists{/gist_id}",
+    "starred_url": "https://api.github.com/users/gitcove-sandbox/starred{/owner}{/repo}",
+    "subscriptions_url": "https://api.github.com/users/gitcove-sandbox/subscriptions",
+    "organizations_url": "https://api.github.com/users/gitcove-sandbox/orgs",
+    "repos_url": "https://api.github.com/users/gitcove-sandbox/repos",
+    "events_url": "https://api.github.com/users/gitcove-sandbox/events{/privacy}",
+    "received_events_url": "https://api.github.com/users/gitcove-sandbox/received_events",
+    "type": "Organization",
+    "user_view_type": "public",
+    "site_admin": false
+  },
+  "name": "cove-ro-gitcove-sandbox",
+  "description": null,
+  "external_url": "https://github.com/gitcove-sandbox",
+  "html_url": "https://github.com/apps/cove-ro-gitcove-sandbox",
+  "created_at": "2026-11-07T14:51:20Z",
+  "updated_at": "2026-11-07T14:51:20Z",
+  "permissions": {
+    "contents": "read",
+    "issues": "read",
+    "pull_requests": "read",
+    "metadata": "read",
+    "members": "read"
+  },
+  "events": []
+}

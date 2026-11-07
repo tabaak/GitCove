@@ -1,0 +1,1 @@
+-X POST https://api.github.com/repos/gitcove-sandbox/cove-spike/pulls/7/reviews -d {"commit_id":"fbdd49ad5348e948d43c30dfb9c0e242de7f828b","event":"COMMENT","body":"review on c1","comments":[{"path":"i.txt","line":2,"side":"RIGHT","body":"line comment in review on c1"}]}

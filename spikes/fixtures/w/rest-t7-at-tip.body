@@ -1,0 +1,10 @@
+{
+  "ref": "refs/heads/t7",
+  "node_id": "REF_kwDOVmTaoK1yZWZzL2hlYWRzL3Q3",
+  "url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/git/refs/heads/t7",
+  "object": {
+    "sha": "1802cc7126b58f5552fd5bdafdd034c053c54e5c",
+    "type": "commit",
+    "url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/git/commits/1802cc7126b58f5552fd5bdafdd034c053c54e5c"
+  }
+}

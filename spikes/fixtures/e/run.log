@@ -1,0 +1,65 @@
+### e run at 2026-11-07T14:57:56Z
+== part 1: read-only App
+repos/gitcove-sandbox/cove-spike/collaborators: HTTP/2 200  {"count":1}
+x-accepted-github-permissions: metadata=read
+orgs/gitcove-sandbox/members: HTTP/2 200  {"count":1}
+x-accepted-github-permissions: members=read
+orgs/gitcove-sandbox/outside_collaborators: HTTP/2 200  {"count":0}
+x-accepted-github-permissions: members=read
+orgs/gitcove-sandbox/teams: HTTP/2 200  {"count":0}
+x-accepted-github-permissions: members=read
+repos/gitcove-sandbox/cove-spike/teams: HTTP/2 403  {"message":"Resource not accessible by integration","permission":null}
+x-accepted-github-permissions: administration=read
+repos/gitcove-sandbox/cove-spike/issues: HTTP/2 200  {"count":7}
+x-accepted-github-permissions: issues=read
+repos/gitcove-sandbox/cove-spike/pulls: HTTP/2 200  {"count":1}
+x-accepted-github-permissions: pull_requests=read
+exit 0
+2ee2c9bac5fdbe1b343fc6a898b125f3f48c9788	refs/pull/7/head
+f572bfbfc0e24a5519382276230a11be05e3ddc8	refs/pull/7/merge
+1f38ec70b13ff7911c40ffd517fb86b1653a2e6d	refs/pull/9/head
+exit 0
+From https://github.com/gitcove-sandbox/cove-spike
+ * [new ref]         refs/pull/7/head  -> refs/gitcove/github/pull/7/head
+ * [new ref]         refs/pull/7/merge -> refs/gitcove/github/pull/7/merge
+ * [new ref]         refs/pull/9/head  -> refs/gitcove/github/pull/9/head
+ * [new branch]      fixes-test        -> refs/gitcove/github/heads/fixes-test
+ * [new branch]      inline-test       -> refs/gitcove/github/heads/inline-test
+ * [new branch]      legacy            -> refs/gitcove/github/heads/legacy
+ * [new branch]      main              -> refs/gitcove/github/heads/main
+ * [new branch]      old-tip           -> refs/gitcove/github/heads/old-tip
+ * [new branch]      on-side           -> refs/gitcove/github/heads/on-side
+ * [new branch]      plain             -> refs/gitcove/github/heads/plain
+ * [new branch]      rs-disabled       -> refs/gitcove/github/heads/rs-disabled
+ * [new branch]      rs-linear         -> refs/gitcove/github/heads/rs-linear
+ * [new branch]      rs-org            -> refs/gitcove/github/heads/rs-org
+ * [new branch]      rs-repo           -> refs/gitcove/github/heads/rs-repo
+ * [new branch]      t1-after          -> refs/gitcove/github/heads/t1-after
+ * [new branch]      t10               -> refs/gitcove/github/heads/t10
+ * [new branch]      t12               -> refs/gitcove/github/heads/t12
+ * [new branch]      t2                -> refs/gitcove/github/heads/t2
+ * [new branch]      t5                -> refs/gitcove/github/heads/t5
+ * [new branch]      t6                -> refs/gitcove/github/heads/t6
+ * [new branch]      t7                -> refs/gitcove/github/heads/t7
+ * [new branch]      t9                -> refs/gitcove/github/heads/t9
+exit 128
+remote: Write access to repository not granted.
+fatal: unable to access 'https://github.com/gitcove-sandbox/cove-spike.git/': The requested URL returned error: 403
+== part 2: does an App-created PR trigger CI?
+HTTP/2 201  {"commit":"75d1fe4549268cbf9331a9a07beefb35642cc504"}
+exit 0
+remote: 
+remote: Create a pull request for 'app-pr' on GitHub by visiting:        
+remote:      https://github.com/gitcove-sandbox/cove-spike/pull/new/app-pr        
+remote: 
+To https://github.com/gitcove-sandbox/cove-spike.git
+ * [new branch]      app-pr -> app-pr
+HTTP/2 201  {"number":10,"user":"cove-rw-gitcove-sandbox[bot]"}
+waiting 60 s for runs
+HTTP/2 200  {"event":"pull_request","status":"completed","conclusion":"success"}
+{"event":"push","status":"completed","conclusion":"failure"}
+{"event":"push","status":"completed","conclusion":"success"}
+
+Part 1 confirms read-only sync if collaborators returns a list, org endpoints return 200, repos/*/teams is 403,
+the refs/pull fetch works, and the push fails with a permission error (not "src refspec").
+Part 2 confirms if there are both push and pull_request runs, neither "action_required".

@@ -1,0 +1,42 @@
+{
+  "id": 5813029382,
+  "node_id": "PRR_kwDOVmTaoM8AAAABWnvKBg",
+  "user": {
+    "login": "cove-rw-gitcove-sandbox[bot]",
+    "id": 353775490,
+    "node_id": "BOT_kgDOFRYvgg",
+    "avatar_url": "https://avatars.githubusercontent.com/u/353756659?v=4",
+    "gravatar_id": "",
+    "url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D",
+    "html_url": "https://github.com/apps/cove-rw-gitcove-sandbox",
+    "followers_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/followers",
+    "following_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/following{/other_user}",
+    "gists_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/gists{/gist_id}",
+    "starred_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/starred{/owner}{/repo}",
+    "subscriptions_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/subscriptions",
+    "organizations_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/orgs",
+    "repos_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/repos",
+    "events_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/events{/privacy}",
+    "received_events_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/received_events",
+    "type": "Bot",
+    "user_view_type": "public",
+    "site_admin": false
+  },
+  "body": "review on c1",
+  "state": "COMMENTED",
+  "html_url": "https://github.com/gitcove-sandbox/cove-spike/pull/7#pullrequestreview-5813029382",
+  "pull_request_url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/pulls/7",
+  "author_association": "NONE",
+  "is_copilot_code_review": false,
+  "copilot_code_review_effort": null,
+  "_links": {
+    "html": {
+      "href": "https://github.com/gitcove-sandbox/cove-spike/pull/7#pullrequestreview-5813029382"
+    },
+    "pull_request": {
+      "href": "https://api.github.com/repos/gitcove-sandbox/cove-spike/pulls/7"
+    }
+  },
+  "submitted_at": "2026-11-07T14:57:08Z",
+  "commit_id": "fbdd49ad5348e948d43c30dfb9c0e242de7f828b"
+}

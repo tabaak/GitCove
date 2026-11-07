@@ -1,0 +1,1 @@
+-G https://api.github.com/repos/gitcove-sandbox/cove-spike/issues --data-urlencode state=all --data-urlencode creator=cove-rw-gitcove-sandbox[bot] --data-urlencode since=2026-11-07T14:50:36Z

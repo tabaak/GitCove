@@ -1,0 +1,24 @@
+exit 0
+From https://github.com/gitcove-sandbox/cove-spike
+ * [new ref]         refs/pull/7/head  -> refs/gitcove/github/pull/7/head
+ * [new ref]         refs/pull/7/merge -> refs/gitcove/github/pull/7/merge
+ * [new ref]         refs/pull/9/head  -> refs/gitcove/github/pull/9/head
+ * [new branch]      fixes-test        -> refs/gitcove/github/heads/fixes-test
+ * [new branch]      inline-test       -> refs/gitcove/github/heads/inline-test
+ * [new branch]      legacy            -> refs/gitcove/github/heads/legacy
+ * [new branch]      main              -> refs/gitcove/github/heads/main
+ * [new branch]      old-tip           -> refs/gitcove/github/heads/old-tip
+ * [new branch]      on-side           -> refs/gitcove/github/heads/on-side
+ * [new branch]      plain             -> refs/gitcove/github/heads/plain
+ * [new branch]      rs-disabled       -> refs/gitcove/github/heads/rs-disabled
+ * [new branch]      rs-linear         -> refs/gitcove/github/heads/rs-linear
+ * [new branch]      rs-org            -> refs/gitcove/github/heads/rs-org
+ * [new branch]      rs-repo           -> refs/gitcove/github/heads/rs-repo
+ * [new branch]      t1-after          -> refs/gitcove/github/heads/t1-after
+ * [new branch]      t10               -> refs/gitcove/github/heads/t10
+ * [new branch]      t12               -> refs/gitcove/github/heads/t12
+ * [new branch]      t2                -> refs/gitcove/github/heads/t2
+ * [new branch]      t5                -> refs/gitcove/github/heads/t5
+ * [new branch]      t6                -> refs/gitcove/github/heads/t6
+ * [new branch]      t7                -> refs/gitcove/github/heads/t7
+ * [new branch]      t9                -> refs/gitcove/github/heads/t9

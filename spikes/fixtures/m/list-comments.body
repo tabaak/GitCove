@@ -1,0 +1,91 @@
+[
+  {
+    "url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/issues/comments/6708531026",
+    "html_url": "https://github.com/gitcove-sandbox/cove-spike/issues/1#issuecomment-6708531026",
+    "issue_url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/issues/1",
+    "id": 6708531026,
+    "node_id": "IC_kwDOVmTaoM8AAAABj9wPUg",
+    "user": {
+      "login": "cove-rw-gitcove-sandbox[bot]",
+      "id": 353775490,
+      "node_id": "BOT_kgDOFRYvgg",
+      "avatar_url": "https://avatars.githubusercontent.com/u/353756659?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D",
+      "html_url": "https://github.com/apps/cove-rw-gitcove-sandbox",
+      "followers_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/followers",
+      "following_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/following{/other_user}",
+      "gists_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/subscriptions",
+      "organizations_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/orgs",
+      "repos_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/repos",
+      "events_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/cove-rw-gitcove-sandbox%5Bbot%5D/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "created_at": "2026-11-07T14:55:35Z",
+    "updated_at": "2026-11-07T14:55:35Z",
+    "body": "c\n<!-- gitcove:op=1044adfd-2eb1-4535-a1d6-ef226c95d991 -->",
+    "author_association": "NONE",
+    "pin": null,
+    "reactions": {
+      "url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/issues/comments/6708531026/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "performed_via_github_app": {
+      "id": 5657199,
+      "client_id": "Iv23lif2NrNg0HvfU1WN",
+      "slug": "cove-rw-gitcove-sandbox",
+      "node_id": "A_kwHOFRXl884AVlJv",
+      "owner": {
+        "login": "gitcove-sandbox",
+        "id": 353756659,
+        "node_id": "O_kgDOFRXl8w",
+        "avatar_url": "https://avatars.githubusercontent.com/u/353756659?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/gitcove-sandbox",
+        "html_url": "https://github.com/gitcove-sandbox",
+        "followers_url": "https://api.github.com/users/gitcove-sandbox/followers",
+        "following_url": "https://api.github.com/users/gitcove-sandbox/following{/other_user}",
+        "gists_url": "https://api.github.com/users/gitcove-sandbox/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/gitcove-sandbox/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/gitcove-sandbox/subscriptions",
+        "organizations_url": "https://api.github.com/users/gitcove-sandbox/orgs",
+        "repos_url": "https://api.github.com/users/gitcove-sandbox/repos",
+        "events_url": "https://api.github.com/users/gitcove-sandbox/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/gitcove-sandbox/received_events",
+        "type": "Organization",
+        "user_view_type": "public",
+        "site_admin": false
+      },
+      "name": "cove-rw-gitcove-sandbox",
+      "description": null,
+      "external_url": "https://github.com/gitcove-sandbox",
+      "html_url": "https://github.com/apps/cove-rw-gitcove-sandbox",
+      "created_at": "2026-11-07T14:51:38Z",
+      "updated_at": "2026-11-07T14:54:48Z",
+      "permissions": {
+        "contents": "write",
+        "issues": "write",
+        "metadata": "read",
+        "pull_requests": "write",
+        "workflows": "write"
+      },
+      "events": [
+
+      ]
+    },
+    "minimized": null
+  }
+]

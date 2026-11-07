@@ -1,0 +1,58 @@
+[
+  {
+    "name": "legacy",
+    "commit": {
+      "sha": "68587cbca53620e0c4aad3a515c1a5079d6d2b87",
+      "url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/commits/68587cbca53620e0c4aad3a515c1a5079d6d2b87"
+    },
+    "protected": true
+  },
+  {
+    "name": "main",
+    "commit": {
+      "sha": "68587cbca53620e0c4aad3a515c1a5079d6d2b87",
+      "url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/commits/68587cbca53620e0c4aad3a515c1a5079d6d2b87"
+    },
+    "protected": false
+  },
+  {
+    "name": "plain",
+    "commit": {
+      "sha": "68587cbca53620e0c4aad3a515c1a5079d6d2b87",
+      "url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/commits/68587cbca53620e0c4aad3a515c1a5079d6d2b87"
+    },
+    "protected": false
+  },
+  {
+    "name": "rs-disabled",
+    "commit": {
+      "sha": "68587cbca53620e0c4aad3a515c1a5079d6d2b87",
+      "url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/commits/68587cbca53620e0c4aad3a515c1a5079d6d2b87"
+    },
+    "protected": false
+  },
+  {
+    "name": "rs-linear",
+    "commit": {
+      "sha": "68587cbca53620e0c4aad3a515c1a5079d6d2b87",
+      "url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/commits/68587cbca53620e0c4aad3a515c1a5079d6d2b87"
+    },
+    "protected": true
+  },
+  {
+    "name": "rs-org",
+    "commit": {
+      "sha": "68587cbca53620e0c4aad3a515c1a5079d6d2b87",
+      "url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/commits/68587cbca53620e0c4aad3a515c1a5079d6d2b87"
+    },
+    "protected": true
+  },
+  {
+    "name": "rs-repo",
+    "commit": {
+      "sha": "68587cbca53620e0c4aad3a515c1a5079d6d2b87",
+      "url": "https://api.github.com/repos/gitcove-sandbox/cove-spike/commits/68587cbca53620e0c4aad3a515c1a5079d6d2b87"
+    },
+    "protected": true
+  }
+]

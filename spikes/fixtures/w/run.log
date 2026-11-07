@@ -1,0 +1,67 @@
+### w run at 2026-11-07T14:53:19Z
+remote: 
+remote: Create a pull request for 'on-side' on GitHub by visiting:        
+remote:      https://github.com/gitcove-sandbox/cove-spike/pull/new/on-side        
+remote: 
+A=71fc20123e8ed31c0e674fbdb66c498d06b37e78 (old main, workflow v1)  C=1802cc7126b58f5552fd5bdafdd034c053c54e5c (main tip, v2)  S=31b5fe1f569e03786f6b13722a5c084169708987 (side branch)
+== git push cases
+exit 1
+To https://github.com/gitcove-sandbox/cove-spike.git
+ ! [remote rejected] t1 -> t1 (refusing to allow a GitHub App to create or update workflow `.github/workflows/w.yml` without `workflows` permission)
+error: failed to push some refs to 'https://github.com/gitcove-sandbox/cove-spike.git'
+exit 0
+remote: 
+remote: Create a pull request for 't2' on GitHub by visiting:        
+remote:      https://github.com/gitcove-sandbox/cove-spike/pull/new/t2        
+remote: 
+To https://github.com/gitcove-sandbox/cove-spike.git
+ * [new branch]      1802cc7126b58f5552fd5bdafdd034c053c54e5c -> t2
+exit 1
+To https://github.com/gitcove-sandbox/cove-spike.git
+ ! [remote rejected] 71fc20123e8ed31c0e674fbdb66c498d06b37e78 -> t3 (refusing to allow a GitHub App to create or update workflow `.github/workflows/w.yml` without `workflows` permission)
+error: failed to push some refs to 'https://github.com/gitcove-sandbox/cove-spike.git'
+exit 1
+To https://github.com/gitcove-sandbox/cove-spike.git
+ ! [remote rejected] t4 -> t4 (refusing to allow a GitHub App to create or update workflow `.github/workflows/w.yml` without `workflows` permission)
+error: failed to push some refs to 'https://github.com/gitcove-sandbox/cove-spike.git'
+exit 0
+remote: 
+remote: Create a pull request for 't5' on GitHub by visiting:        
+remote:      https://github.com/gitcove-sandbox/cove-spike/pull/new/t5        
+remote: 
+To https://github.com/gitcove-sandbox/cove-spike.git
+ * [new branch]      31b5fe1f569e03786f6b13722a5c084169708987 -> t5
+exit 0
+remote: 
+remote: Create a pull request for 't6' on GitHub by visiting:        
+remote:      https://github.com/gitcove-sandbox/cove-spike/pull/new/t6        
+remote: 
+To https://github.com/gitcove-sandbox/cove-spike.git
+ * [new branch]      t6 -> t6
+== REST cases
+HTTP/2 201  {"ref":"refs/heads/t7"}
+HTTP/2 403  {"message":"Resource not accessible by integration","status":"403"}
+HTTP/2 201  {"ref":"refs/heads/t9"}
+HTTP/2 403  {"message":"Resource not accessible by integration","status":"403"}
+x-accepted-github-permissions: contents=write; contents=write,workflows=write
+
+
+Expected: case 1 and the PUT rejected ("refusing to allow a GitHub App to create or update workflow"); 2 and 6 accepted.
+Cases 3, 4 (the failover case), 5, t8 and t9 are the unknowns: any rejection there means the check is tree-based.
+Next: give cove-rw Workflows: write, accept the change as owner, then run ./w.sh after.
+### w run at 2026-11-07T14:53:53Z
+remote: 
+remote: Create a pull request for 'old-tip' on GitHub by visiting:        
+remote:      https://github.com/gitcove-sandbox/cove-spike/pull/new/old-tip        
+remote: 
+### w run at 2026-11-07T14:55:22Z
+exit 0
+remote: 
+remote: Create a pull request for 't1-after' on GitHub by visiting:        
+remote:      https://github.com/gitcove-sandbox/cove-spike/pull/new/t1-after        
+remote: 
+To https://github.com/gitcove-sandbox/cove-spike.git
+ * [new branch]      t1-after -> t1-after
+HTTP/2 201  {"commit":"1cb952552f4b9cd42fb035b2ab75981a1c4b8bf3"}
+x-accepted-github-permissions: contents=write; contents=write,workflows=write
+

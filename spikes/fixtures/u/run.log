@@ -1,0 +1,55 @@
+### u run at 2026-11-07T14:59:45Z
+== PR opened by the App
+exit 0
+remote: 
+remote: Create a pull request for 'u-test' on GitHub by visiting:        
+remote:      https://github.com/gitcove-sandbox/cove-spike/pull/new/u-test        
+remote: 
+To https://github.com/gitcove-sandbox/cove-spike.git
+ * [new branch]      u-test -> u-test
+HTTP/2 201  PR #11 head 92d4bb456ffffd74a4a581bd3e020dc4e6ec69e9
+== device flow
+Open https://github.com/login/device and enter 9D06-DDA9
+{
+  "access_token": "***",
+  "expires_in": 28800,
+  "refresh_token": "***",
+  "refresh_token_expires_in": 15638400,
+  "token_type": "bearer",
+  "scope": ""
+}
+== acting as the person
+HTTP/2 200  {"login":"tabaak"}
+HTTP/2 201  {"user":"tabaak","app":"cove-rw-gitcove-sandbox"}
+HTTP/2 200  {"user":"tabaak","state":"COMMENTED"}
+== branch protection: 1 approval, dismiss stale approvals
+HTTP/2 200  {"url":"https://api.github.com/repos/gitcove-sandbox/cove-spike/branches/main/protection"}
+before approval: {"reviewDecision":"REVIEW_REQUIRED","mergeStateStatus":"BLOCKED"}
+HTTP/2 200  {"user":"tabaak","state":"APPROVED","commit_id":"92d4bb456ffffd74a4a581bd3e020dc4e6ec69e9"}
+after approval: {"reviewDecision":"APPROVED","mergeStateStatus":"CLEAN"}
+== stale approvals
+exit 0
+To https://github.com/gitcove-sandbox/cove-spike.git
+   92d4bb4..95b0371  u-test -> u-test
+after new commit: {"reviewDecision":"REVIEW_REQUIRED","mergeStateStatus":"BLOCKED"}
+HTTP/2 422  {"message":"Unprocessable Entity","status":"422"}
+after approving the old commit 92d4bb456ffffd74a4a581bd3e020dc4e6ec69e9 while head is 95b03717bd6b45a030bd8659bc6e38ce0d03394e: {"reviewDecision":"REVIEW_REQUIRED","mergeStateStatus":"BLOCKED"}
+== refresh
+{
+  "access_token": "***",
+  "expires_in": 28800,
+  "refresh_token": "***",
+  "refresh_token_expires_in": 15638400,
+  "scope": "",
+  "token_type": "bearer"
+}
+reusing the old refresh token:
+{
+  "error": "bad_refresh_token",
+  "error_description": "The refresh token passed is incorrect or expired.",
+  "error_uri": "https://docs.github.com/apps/managing-oauth-apps/troubleshooting-oauth-app-access-token-request-errors/#bad-verification-code"
+}
+
+Record: expires_in and refresh_token_expires_in (expected 28800 and 15897600), whether comments show the person
+with the App badge, whether reviewDecision becomes APPROVED, what the old-commit approval does, and whether
+the old refresh token is rejected after use.

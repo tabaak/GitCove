@@ -1,0 +1,4 @@
+-X POST https://api.github.com/repos/gitcove-sandbox/cove-spike/issues -d {
+  "title": "marker test",
+  "body": "Originally by `alice`\n\nhello\n<!-- gitcove:op=c16012e3-8995-430e-ab2f-0f3e26b145a7 -->"
+}

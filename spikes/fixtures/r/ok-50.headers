@@ -1,0 +1,28 @@
+HTTP/2 201 
+date: Sat, 07 Nov 2026 15:04:40 GMT
+content-type: application/json; charset=utf-8
+content-length: 3906
+cache-control: private, max-age=60, s-maxage=60
+vary: Accept, Authorization, Cookie, X-GitHub-OTP,Accept-Encoding, Accept, X-Requested-With
+etag: "321e796571a2b9ca6c5dd6effe1148107dd658298401059ea8468b3f054a46cc"
+location: https://api.github.com/repos/gitcove-sandbox/cove-spike/issues/comments/6708671937
+x-github-media-type: github.v3; format=json
+x-accepted-github-permissions: issues=write; pull_requests=write
+x-github-api-version-selected: 2022-11-28
+access-control-expose-headers: ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset, Warning
+access-control-allow-origin: *
+strict-transport-security: max-age=31536000; includeSubdomains; preload
+x-frame-options: deny
+x-content-type-options: nosniff
+x-xss-protection: 0
+referrer-policy: origin-when-cross-origin, strict-origin-when-cross-origin
+content-security-policy: default-src 'none'
+server: github.com
+x-ratelimit-limit: 5000
+x-ratelimit-remaining: 4880
+x-ratelimit-reset: 1794066772
+x-ratelimit-used: 120
+x-ratelimit-resource: core
+x-github-request-id: D093:1A35CD:52DF88A:7E28C20:6AEF3E07
+x-github-edge-region: fra
+

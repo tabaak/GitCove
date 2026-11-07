@@ -1,0 +1,1 @@
+-X POST https://api.github.com/repos/gitcove-sandbox/cove-spike/rulesets -d {"name":"rs-repo","target":"branch","enforcement":"active","conditions":{"ref_name":{"include":["refs/heads/rs-repo"],"exclude":[]}},"rules":[{"type":"deletion"},{"type":"non_fast_forward"}]}

@@ -1,0 +1,41 @@
+{
+  "id": 26760366,
+  "name": "rs-repo",
+  "target": "branch",
+  "source_type": "Repository",
+  "source": "gitcove-sandbox/cove-spike",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "exclude": [
+
+      ],
+      "include": [
+        "refs/heads/rs-repo"
+      ]
+    }
+  },
+  "rules": [
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "non_fast_forward"
+    }
+  ],
+  "node_id": "RRS_lACqUmVwb3NpdG9yec5WZNqgzgGYVK4",
+  "created_at": "2026-11-07T15:53:03.027+01:00",
+  "updated_at": "2026-11-07T15:53:03.059+01:00",
+  "bypass_actors": [
+
+  ],
+  "current_user_can_bypass": "never",
+  "_links": {
+    "self": {
+      "href": "https://api.github.com/repos/gitcove-sandbox/cove-spike/rulesets/26760366"
+    },
+    "html": {
+      "href": "https://github.com/gitcove-sandbox/cove-spike/rules/26760366"
+    }
+  }
+}

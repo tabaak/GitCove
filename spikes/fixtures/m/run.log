@@ -1,0 +1,38 @@
+### m run at 2026-11-07T14:55:33Z
+== 1. round trip
+HTTP/2 201  issue #1 by cove-rw-gitcove-sandbox[bot]
+HTTP/2 200  {"raw_has":true,"html_has":false,"via":null}
+HTTP/2 201  {"id":6708531026,"user":"cove-rw-gitcove-sandbox[bot]"}
+HTTP/2 200  HTTP/2 200  listing by creator=cove-rw-gitcove-sandbox[bot] finds the issue: 1
+== 2. listing lag right after a 201 (10 comments, 5 issues)
+comment 1 found after .44 s
+comment 2 found after .41 s
+comment 3 found after .44 s
+comment 4 found after .72 s
+comment 5 found after .37 s
+comment 6 found after .54 s
+comment 7 found after .43 s
+comment 8 found after .41 s
+comment 9 found after .48 s
+comment 10 found after .59 s
+issue 1 found after 2.64 s
+issue 2 found after 4.54 s
+issue 3 found after 4.62 s
+issue 4 found after 4.79 s
+issue 5 found after 5.12 s
+== 3. lost responses: client gives up after T seconds; did the write happen anyway?
+curl: (28) Operation timed out after 200 milliseconds with 0 bytes received
+timeout 0.2s: curl exit 28, created=1
+curl: (28) Operation timed out after 405 milliseconds with 0 bytes received
+timeout 0.4s: curl exit 28, created=1
+curl: (28) Operation timed out after 605 milliseconds with 0 bytes received
+timeout 0.6s: curl exit 28, created=1
+timeout 0.8s: curl exit 0, created=1
+timeout 1.0s: curl exit 0, created=1
+timeout 1.5s: curl exit 0, created=1
+== 4. search lag (search must never justify a repost; this only measures it)
+1s body=1 comment=1
+
+Confirms the design if: raw_has=true, html_has=false, the creator listing works with the bot login, and lags are ~0 s.
+Any "NOT FOUND" or a non-zero lag means recovery must wait and recheck before declaring a write lost.
+Section 3: created=1 with a curl timeout is exactly the lost-response case the marker exists for.

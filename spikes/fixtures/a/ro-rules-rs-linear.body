@@ -1,0 +1,8 @@
+[
+  {
+    "type": "required_linear_history",
+    "ruleset_source_type": "Repository",
+    "ruleset_source": "gitcove-sandbox/cove-spike",
+    "ruleset_id": 26760371
+  }
+]

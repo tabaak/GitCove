@@ -1,0 +1,4 @@
+exit 1
+To https://github.com/gitcove-sandbox/cove-spike.git
+ ! [remote rejected] 71fc20123e8ed31c0e674fbdb66c498d06b37e78 -> t3 (refusing to allow a GitHub App to create or update workflow `.github/workflows/w.yml` without `workflows` permission)
+error: failed to push some refs to 'https://github.com/gitcove-sandbox/cove-spike.git'

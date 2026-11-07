@@ -1,0 +1,7 @@
+exit 0
+remote: 
+remote: Create a pull request for 'app-pr' on GitHub by visiting:        
+remote:      https://github.com/gitcove-sandbox/cove-spike/pull/new/app-pr        
+remote: 
+To https://github.com/gitcove-sandbox/cove-spike.git
+ * [new branch]      app-pr -> app-pr

@@ -1,0 +1,31 @@
+HTTP/2 201 
+date: Sat, 07 Nov 2026 15:03:10 GMT
+content-type: application/json; charset=utf-8
+content-length: 3011
+cache-control: private, max-age=60, s-maxage=60
+vary: Accept, Authorization, Cookie, X-GitHub-OTP,Accept-Encoding, Accept, X-Requested-With
+etag: "b8d2f7ad54c685a29ae1bb3a04a1d10ba963b595c6af379d744ed461070abbde"
+location: https://api.github.com/repos/gitcove-sandbox/cove-spike/issues/12
+x-github-media-type: github.v3; format=json
+deprecation: Tue, 10 Mar 2026 00:00:00 GMT
+sunset: Fri, 10 Mar 2028 00:00:00 GMT
+link: <https://docs.github.com/en/rest/about-the-rest-api/api-versions>; rel="deprecation"; type="text/html"
+x-accepted-github-permissions: issues=write
+x-github-api-version-selected: 2022-11-28
+access-control-expose-headers: ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset, Warning
+access-control-allow-origin: *
+strict-transport-security: max-age=31536000; includeSubdomains; preload
+x-frame-options: deny
+x-content-type-options: nosniff
+x-xss-protection: 0
+referrer-policy: origin-when-cross-origin, strict-origin-when-cross-origin
+content-security-policy: default-src 'none'
+server: github.com
+x-ratelimit-limit: 5000
+x-ratelimit-remaining: 4930
+x-ratelimit-reset: 1794066772
+x-ratelimit-used: 70
+x-ratelimit-resource: core
+x-github-request-id: D057:294C33:5015E05:79F7A2E:6AEF3DAD
+x-github-edge-region: fra
+
