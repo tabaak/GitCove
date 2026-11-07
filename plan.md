@@ -1,10 +1,10 @@
-# Backstop: build plan
+# GitCove: build plan
 
-Working name, rename pending (decision D1). This plan is derived from `idea-v2.md`, and section numbers below refer to that document. Estimates assume part-time work and are rough.
+Project name: GitCove. CLI command: `cove` (decision D1). This plan is derived from `idea-v2.md`, and section numbers below refer to that document. Estimates assume part-time work and are rough.
 
 ## 1. Scope in one paragraph
 
-Backstop is a self-hosted Go service that mirrors a GitHub organisation's code, issues, PRs and reviews. During a GitHub outage, or a slow period, developers push, comment, open issues and PRs, review and merge locally on Backstop. Afterwards, Backstop replays that work to GitHub with no loss, no duplicates and no overwritten history, including across crashes and repeat outages.
+GitCove is a self-hosted Go service that mirrors a GitHub organisation's code, issues, PRs and reviews. During a GitHub outage, or a slow period, developers push, comment, open issues and PRs, review and merge locally on GitCove. Afterwards, GitCove replays that work to GitHub with no loss, no duplicates and no overwritten history, including across crashes and repeat outages.
 
 ## 2. Order and timeline
 
@@ -62,7 +62,7 @@ Checks that don't apply yet are skipped until the milestone that introduces thei
 This layout is a suggestion to settle in milestone 1.
 
 ```
-cmd/backstop/        server and CLI in one binary
+cmd/cove/            server and CLI in one binary
 internal/ghclient/   GitHub API behind one interface
 internal/gitstore/   bare repos, refs, hooks, http-backend
 internal/store/      SQLite, migrations
@@ -72,7 +72,7 @@ internal/replay/     plan, comparison, writer, rate budget
 internal/health/     probes and mode decisions
 internal/agent/      developer-machine agent
 internal/web/        server-rendered interface
-internal/auth/       Backstop tokens, user tokens
+internal/auth/       GitCove tokens, user tokens
 fakehub/             fault-injecting GitHub stand-in
 ```
 
@@ -82,7 +82,7 @@ fakehub/             fault-injecting GitHub stand-in
 
 Tasks:
 
-- [ ] Create a sandbox organisation (a Team plan if possible, so rulesets work on private repos), a private repo `bs-spike`, and two private Apps from a manifest: `bs-ro` and `bs-rw`.
+- [ ] Create a sandbox organisation (a Team plan if possible, so rulesets work on private repos), a private repo `cove-spike`, and two private Apps from a manifest: `cove-ro` and `cove-rw`.
 - [ ] **Spike M:** post a comment, issue and PR with a hidden marker. Check the marker survives in the raw body. Measure how long a filtered listing (`state=all`, `since`, author) takes to show a new item after a `201`. Simulate a lost response.
 - [ ] **Spike W:** push branches whose commits, or only whose tree, differ in `.github/workflows`, with and without the `workflows` permission, over Git and REST, including a stale base.
 - [ ] **Spike R:** post comments in a loop until GitHub blocks. Record the count, the headers and whether `Retry-After` appears.
@@ -106,13 +106,13 @@ Tasks:
 - [ ] Go module, build, lint, unit-test setup, Dockerfile, and CI for the project itself.
 - [ ] SQLite in WAL mode with migrations. Initial tables: `events`, `repos`, `actors`, `outbox`, `id_map`, `conflicts`, `sync_cursors`, `tokens`, `audit_log`.
 - [ ] GitHub client behind one interface: App JWT, installation tokens with refresh, ETag support, and a response-header-aware rate limiter.
-- [ ] Git store: bare repos, fetch into `refs/backstop/github/*`, served refs kept separate, `git http-backend` over HTTPS.
-- [ ] Backstop tokens, hashed, issued and revoked from the admin CLI. Admin assigns each token's repo access by hand.
+- [ ] Git store: bare repos, fetch into `refs/gitcove/github/*`, served refs kept separate, `git http-backend` over HTTPS.
+- [ ] GitCove tokens, hashed, issued and revoked from the admin CLI. Admin assigns each token's repo access by hand.
 - [ ] Config, structured logging, admin CLI skeleton, and a `/status` endpoint.
 - [ ] Basic health check with a Git probe and an API probe.
 - [ ] `fakehub` v1: app authentication, repo listing and Git smart HTTP from fixtures, plus a seeded fault hook for down, 500s and timeouts.
 
-**Exit:** a repo can be cloned from Backstop with GitHub blocked, and with `fakehub` breaking the connection mid-fetch Backstop recovers on the next cycle.
+**Exit:** a repo can be cloned from GitCove with GitHub blocked, and with `fakehub` breaking the connection mid-fetch GitCove recovers on the next cycle.
 
 ## 6. Milestone 2: code failover and replay (about 2 weeks)
 
@@ -127,7 +127,7 @@ Tasks:
 - [ ] Served-versus-GitHub ref rules: a branch with unreplayed work stays where developers left it, and others follow GitHub.
 - [ ] Reconciling: catch-up fetch, then build the replay plan.
 - [ ] Replay plan CLI with dry run, a list of every branch to push, and admin approval.
-- [ ] Commit history comparison (section 8.6): already on GitHub, default or deploy branch, fast-forward, diverged. Fallback branch `backstop/<branch>-<timestamp>` and PR.
+- [ ] Commit history comparison (section 8.6): already on GitHub, default or deploy branch, fast-forward, diverged. Fallback branch `gitcove/<branch>-<timestamp>` and PR.
 - [ ] PR-only replay for default and deploy branches, with the setting to turn it off. Workflow-file check per spike W.
 - [ ] Outbox life-cycle for ref items, crash recovery, resume, and pause on a second outage.
 - [ ] `fakehub`: push endpoints, branch protection responses, minimal PR creation, and faults for kill points, repeat outages, divergent branches and developers pushing the same commits first.
@@ -160,16 +160,16 @@ Tasks:
 
 Tasks:
 
-- [ ] Create PRs on Backstop from the web interface and CLI, with `L-` references and "Fixes" keywords rewritten on replay.
-- [ ] PR metadata on Backstop and in replay: edits, close and reopen, draft or ready, labels, assignees and base branch, using the conflict rules in section 8.6.
+- [ ] Create PRs on GitCove from the web interface and CLI, with `L-` references and "Fixes" keywords rewritten on replay.
+- [ ] PR metadata on GitCove and in replay: edits, close and reopen, draft or ready, labels, assignees and base branch, using the conflict rules in section 8.6.
 - [ ] Reviews: summary, verdict, and line comments stored with commit, path, line and side. Replies to line comments and resolved conversations stored on `review_threads`.
 - [ ] Local approvals with a per-repo count (decision D4) and approver other than the author. Local merge into the target branch, as a merge commit only (decision D5). A local merge is the only way to change a protected branch.
 - [ ] Local merge conflicts: refuse cleanly, leave nothing half-merged, and reset approvals when the head commit changes.
 - [ ] Linked issues: close them locally when a PR with a closing keyword is merged, without replaying that close as its own item, or after the GitHub merge if the milestone 0 keyword test says GitHub doesn't close them.
-- [ ] Two-state display for a PR merged locally: "Merged on Backstop" and "Open on GitHub". A PR closed on GitHub without merging goes to `conflicts`.
+- [ ] Two-state display for a PR merged locally: "Merged on GitCove" and "Open on GitHub". A PR closed on GitHub without merging goes to `conflicts`.
 - [ ] Show GitHub's last known check results read-only on mirrored PRs. Local merges don't require checks.
 - [ ] Fork PRs: read, comment and review only.
-- [ ] Interface labels "approved on Backstop, not checked by GitHub" until replay.
+- [ ] Interface labels "approved on GitCove, not checked by GitHub" until replay.
 - [ ] Per-PR replay in merge order, with the order listed in each PR's text. Bundle PR fallback behind a setting, to be chosen after the prototype.
 - [ ] Review replay (section 8.13): line comments anchored by commit, ordinary-comment fallback when the commit is missing, approvals only for the exact commit and only for authorised reviewers (R7), otherwise a note. Replies wait behind their parent comment, with a standalone-comment fallback if it was deleted. A conversation is resolved only if no new comments arrived on GitHub in that thread.
 - [ ] Likely-duplicate detection by title, at plan time and again just before each write.
@@ -185,7 +185,7 @@ Tasks:
 Tasks:
 
 - [ ] Health probes on separate paths (Git over HTTPS and SSH, API reads and writes, signed-in and anonymous) with windowed error rate and delay. The alert suggests switching between SSH and HTTPS when only one path is broken.
-- [ ] Agent for developer machines, installed by `client setup` as a systemd or launchd service. It polls Backstop's status and toggles `url.insteadOf`. If Backstop is unreachable, it changes nothing.
+- [ ] Agent for developer machines, installed by `cove client setup` as a systemd or launchd service. It polls GitCove's status and toggles `url.insteadOf`. If GitCove is unreachable, it changes nothing.
 - [ ] Optional automatic failover with a set duration, a minimum run time and a cooldown (decision D6), and an alert channel (decision D7).
 - [ ] Degraded mode with write routing, background replay within the rate budget, and optional auto-replay for items without conflicts. Exit conditions: GitHub healthy for a set time and the queue empty.
 - [ ] Status banner and stale-data warnings in the interface.
@@ -208,10 +208,10 @@ Tasks:
 
 ### Milestone 7: backup protections and mirror hardening (about 2 weeks)
 
-- [ ] History refs under `refs/backstop/history/<timestamp>/...`, saved before any fetch that moves or removes a ref, with a daily 90-day removal job.
+- [ ] History refs under `refs/gitcove/history/<timestamp>/...`, saved before any fetch that moves or removes a ref, with a daily 90-day removal job.
 - [ ] Hide history and GitHub refs with `hideRefs`, and test whether a client can still fetch them by commit ID. If it can, move history into a separate repository.
-- [ ] `backstop restore` to `backstop/restored-<branch>-<timestamp>`, restored branches exempt from following GitHub, and `--push` with a read-write App.
-- [ ] `backstop purge`, and `orphaned` repos with an admin alert.
+- [ ] `cove restore` to `gitcove/restored-<branch>-<timestamp>`, restored branches exempt from following GitHub, and `--push` with a read-write App.
+- [ ] `cove purge`, and `orphaned` repos with an admin alert.
 - [ ] Permission sync from GitHub, with the organisation members and teams fallback if spike E says so.
 - [ ] LFS detection and warnings.
 - [ ] Webhooks with HMAC verification and durable de-duplication, the weekly full scan, tombstones, and ETag polling.
@@ -231,7 +231,7 @@ Tasks:
 
 | # | Decision | Needed by | Default if undecided |
 |---|---|---|---|
-| D1 | Name. BackstopJS already installs a `backstop` command, and `github.com/backstop` is taken. Check SpareForge, then HoldForge, or use `backstop-forge` with another CLI name | End of milestone 0 | `backstop-forge` |
+| D1 | Name: GitCove; CLI command: `cove` | Decided | GitCove / `cove` |
 | D2 | Licence | End of milestone 0 | Apache 2.0 |
 | D3 | Whether to store users' refresh tokens so reviews appear under their names | Start of milestone 3 | No, App-only. Section 8.12 and the real approvals in 8.13 are dropped |
 | D4 | Default approvals needed for a local merge | Start of milestone 4 | 1, and not the author |
@@ -244,7 +244,7 @@ Tasks:
 | Milestone | Faults added to `fakehub` |
 |---|---|
 | 1 | GitHub fully down, partly down (API up and Git down, or the reverse), HTTP 500s, timeouts |
-| 2 | Kill Backstop at random points, repeat outages, force-pushes and deleted branches on GitHub, developers pushing the same commits first, divergent branches, branch protection refusing a push |
+| 2 | Kill GitCove at random points, repeat outages, force-pushes and deleted branches on GitHub, developers pushing the same commits first, divergent branches, branch protection refusing a push |
 | 3 | Rate-limit responses, a created item missing from listings for a while, lost responses, dropped, repeated and out-of-order webhooks, the same item edited on both sides |
 | 4 | Local merges while `main` moves, merge conflicts on a local merge, expired or revoked user tokens, approvals for a commit that changed, line comments on a commit that never reached GitHub, a parent comment deleted before a reply replays, a conversation resolved or given new comments on GitHub during replay, a PR closed on GitHub without merging |
 | 5 | Sustained error rates of 1 to 40%, installation-token failures, SSH-only and HTTPS-only failures, GitHub flapping, the agent losing contact mid-switch |
@@ -258,7 +258,7 @@ Every fault is seeded, so any failing run can be repeated exactly. Proposed targ
 |---|---|
 | Replay takes longer than estimated | Replay milestones come first. Cut from the end of the plan, never from replay |
 | Case 6: GitHub's listing lags behind a successful post | Wait and recheck, then `uncertain`. Spike M measures the lag |
-| GitHub refuses pushes touching workflow files | Spike W, a plan check, `conflicts`, and commits kept on Backstop |
+| GitHub refuses pushes touching workflow files | Spike W, a plan check, `conflicts`, and commits kept on GitCove |
 | `fakehub` differs from real GitHub | Build it from recorded responses, and run each milestone's smaller scenario against the sandbox organisation |
 | Replay triggers a deployment | PR-only rule for default and deploy branches, and the plan lists every branch pushed |
 | A local merge is rejected by GitHub later | Label it clearly, alert the admin, and document the rebase |
@@ -267,7 +267,7 @@ Every fault is seeded, so any failing run can be repeated exactly. Proposed targ
 | Automatic failover has a false alarm or flaps | Opt-in, both Git and API must fail, a cooldown, and flapping faults in tests |
 | GitHub limits or suspends API access | Stay inside documented limits, and stop the queue on any block |
 | The interface keeps growing | Only features that help during an outage get built |
-| Backstop falls behind GitHub's API | Alert on persistent sync errors, and state the maintenance status in the README |
+| GitCove falls behind GitHub's API | Alert on persistent sync errors, and state the maintenance status in the README |
 
 ## 14. If time runs short
 
