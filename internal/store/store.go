@@ -22,7 +22,13 @@ var migrations embed.FS
 
 var ErrNotFound = errors.New("not found")
 
-type Store struct{ db *sql.DB }
+type Store struct {
+	db   *sql.DB
+	path string
+}
+
+// Path is the database file, for processes such as Git hooks that open it themselves.
+func (s *Store) Path() string { return s.path }
 
 // Open opens or creates the database at path in WAL mode and applies pending migrations.
 func Open(path string) (*Store, error) {
@@ -31,7 +37,7 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Store{db}
+	s := &Store{db, path}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
@@ -240,13 +246,16 @@ func (s *Store) TokenValid(ctx context.Context, plain string) (bool, error) {
 	return n > 0, err
 }
 
-// TokenCanRead reports whether plain is an unrevoked token with access to repo.
-func (s *Store) TokenCanRead(ctx context.Context, plain string, repoID int64) (bool, error) {
-	var n int
+// TokenAccess returns the name of plain's token if it is unrevoked and has access to repo, else "".
+func (s *Store) TokenAccess(ctx context.Context, plain string, repoID int64) (string, error) {
+	var name string
 	err := s.db.QueryRowContext(ctx, `
-		SELECT count(*) FROM tokens t JOIN token_repos tr ON tr.token_id = t.id
-		WHERE t.hash = ? AND t.revoked_at IS NULL AND tr.repo_id = ?`, hashToken(plain), repoID).Scan(&n)
-	return n > 0, err
+		SELECT t.name FROM tokens t JOIN token_repos tr ON tr.token_id = t.id
+		WHERE t.hash = ? AND t.revoked_at IS NULL AND tr.repo_id = ?`, hashToken(plain), repoID).Scan(&name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return name, err
 }
 
 // AuditEntry is one row of the audit log.

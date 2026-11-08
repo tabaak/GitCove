@@ -76,7 +76,7 @@ internal/auth/       user tokens (milestone 3); GitCove tokens live in internal/
 fakehub/             fault-injecting GitHub stand-in
 ```
 
-## 4. Milestone 0: spikes and decisions (3–5 days)
+## 4. Milestone 0: spikes and decisions
 
 **Goal:** confirm the GitHub behaviour the design depends on, and settle the blocking decisions.
 
@@ -97,7 +97,7 @@ Tasks:
 
 **Exit:** each spike has a written result. Design sections affected by a failed spike are updated. If spike U fails, the plan continues with App-only attribution. *Spike U passed, so D3 is now only a question of trust.*
 
-## 5. Milestone 1: foundation (1–1.5 weeks)
+## 5. Milestone 1: foundation
 
 **Goal:** a running service that mirrors code and serves it to developers, with the test harness started.
 
@@ -116,28 +116,28 @@ Tasks:
 
 Notes: `fakehub` builds its repo objects from the recorded `create-repo` response. The other recorded fixtures get converted when their endpoints are added. Milestone 0 recorded no installation-token or repo-listing responses, so those follow GitHub's documented shape.
 
-## 6. Milestone 2: code failover and replay (about 2 weeks)
+## 6. Milestone 2: code failover and replay
 
 **Goal:** developers can push code through an outage and have it return to GitHub safely.
 
 Tasks:
 
-- [ ] Persistent mode state machine: Normal, Failover, Reconciling, Replaying. Every transition is audited and survives a restart.
-- [ ] CLI: `failover start`, `failover end`, `client setup`, `client on`, `client off` (the `url.insteadOf` rule).
-- [ ] `pre-receive` hook: reject pushes outside Failover, to protected branches, and force-pushes. The rejection says how to push to a branch and open a PR instead. `post-receive` hook: write outbox rows with the old and new commit IDs.
-- [ ] Protected branch detection per spike A (`protected` true or `rules/branches` non-empty, rule types stored, never the classic protection endpoint), plus an admin list and an emergency allow setting. GitCove copies GitHub's protection and is no stricter: an unprotected default branch accepts pushes. If protection is unknown, treat the branch as protected.
-- [ ] Served-versus-GitHub ref rules: a branch with unreplayed work stays where developers left it, and others follow GitHub.
-- [ ] Reconciling: catch-up fetch, then build the replay plan.
-- [ ] Replay plan CLI with dry run, a list of every branch to push, and admin approval.
-- [ ] Commit history comparison (section 8.6): already on GitHub, default or deploy branch, fast-forward, diverged. Fallback branch `gitcove/<branch>-<timestamp>` and PR.
-- [ ] PR-only replay for default and deploy branches, protected or not, with the setting to turn it off. Workflow-file check per spike W: in the plan, compare each branch's `.github/workflows` tree with every current tip on GitHub, and send mismatches to `conflicts` with the reason.
-- [ ] Replay PRs ask for a merge commit. If GitHub squash- or rebase-merges one, save the old served tip under `refs/gitcove/history/` (only this case; general history refs stay in milestone 7), reset the served branch to GitHub's, audit it, and tell developers to rebase.
-- [ ] Outbox life-cycle for ref items, crash recovery, resume, and pause on a second outage.
-- [ ] `fakehub`: push endpoints, branch protection responses, minimal PR creation, and faults for kill points, repeat outages, divergent branches and developers pushing the same commits first.
+- [x] Persistent mode state machine: Normal, Failover, Reconciling, Replaying. Every transition is audited and survives a restart. *Replaying can also start from Normal, to replay items an admin re-queued.*
+- [x] CLI: `failover start`, `failover end`, `client setup`, `client on`, `client off` (the `url.insteadOf` rule). *`client setup` stores the URL, the organisation and the token (through Git's credential helper). The agent install is milestone 5.*
+- [x] `pre-receive` hook: reject pushes outside Failover, to protected branches, and force-pushes. The rejection says how to push to a branch and open a PR instead. *Changed: the hook also writes the outbox rows, before git moves any ref, and there is no `post-receive` hook. With `post-receive`, a kill between the ref update and the outbox write would lose a push (R2). A row for a push that then fails is harmless: replay finds nothing new on the branch. Tags and branch deletions are refused too. The rejection points to GitHub for the PR, because PRs on GitCove come in milestone 4.*
+- [x] Protected branch detection per spike A. *Changed: only `protected` from the branch listing, which spike A showed is true for classic protection, repo rulesets and org rulesets. Rule types aren't fetched, because nothing uses them yet. "Unknown means protected" applies to branches GitHub has but GitCove hasn't seen listed. A new branch name is accepted, and GitHub judges it at replay (a refusal goes to conflicts). Read literally, the rule would refuse every new branch.* Admin list (`branch mark ... protected`) and emergency allow (`failover allow-protected`), cleared when the failover ends.
+- [x] Served-versus-GitHub ref rules: a branch with unreplayed or conflicted work stays where developers left it, and others follow GitHub. Served refs move by compare-and-swap, so a push landing during a sync is never overwritten.
+- [x] Reconciling: catch-up fetch, then build the replay plan. *`failover end` does both. The plan isn't stored: it's derived from the outbox and the repos, and derived again before each push.*
+- [x] Replay plan CLI with dry run, a list of every branch to push, and admin approval (`replay plan`, `replay approve`, and `replay skip|retry` for conflicts).
+- [x] Commit history comparison (section 8.6): already on GitHub, default or deploy branch, fast-forward, diverged. Fallback branch `gitcove/<branch>-<timestamp>` and PR.
+- [x] PR-only replay for default and deploy branches, protected or not, with the setting to turn it off (`repo pr-only`). Protected branches are always PR-only, since GitHub would refuse the push. Workflow-file check per spike W: in the plan, compare each branch's `.github/workflows` tree with every current tip on GitHub, and send mismatches to `conflicts` with the reason.
+- [x] ~~Replay PRs ask for a merge commit. If GitHub squash- or rebase-merges one, save the old served tip under `refs/gitcove/history/`, reset the served branch to GitHub's, audit it, and tell developers to rebase.~~ *Dropped (decided 8 Nov): a branch follows GitHub again as soon as its work is on GitHub (pushed, or on a fallback branch with a PR), not when the PR merges. Unmerged work then lives on `gitcove/...`, both on GitHub and on GitCove. So the merge method doesn't matter, and no PR polling or history-ref special case is needed.*
+- [x] Outbox life-cycle for ref items, crash recovery, resume, and pause on a second outage. *Ref items end `done`, `conflict` or `skipped`, never `uncertain`. Whether a push landed is read from GitHub's refs. For a fallback PR, the branch name is stored before `sending`, replay looks up a PR from that branch before creating one, and GitHub refuses a second open PR with the same head and base. A pause alerts once (log, plus `COVE_ALERT_WEBHOOK` per decision D7's default) and retries each interval.*
+- [x] `fakehub`: push endpoints, branch protection responses, minimal PR creation, and faults for kill points, repeat outages, divergent branches and developers pushing the same commits first. *Also refuses workflow-tree mismatches like GitHub, logs every push for the fast-forward check, and has a "carried out but never answered" fault for pushes and PR creation.*
 
-**Exit:** with random kills and repeat outages in `fakehub`, no pushes are lost, no PRs are duplicated and GitHub refs move only by fast-forward. Default-branch work arrives only through a PR. Commits already pushed to GitHub create no fallback PR.
+**Exit:** with random kills and repeat outages in `fakehub`, no pushes are lost, no PRs are duplicated and GitHub refs move only by fast-forward. Default-branch work arrives only through a PR. Commits already pushed to GitHub create no fallback PR. *Met in `fakehub`: `TestReplayCampaign` (10 seeds per CI run, 200 nightly; 30 pass locally) checks all of these, plus a full sync agreeing with GitHub. `TestPushesDuringFailoverAndReplay` covers each case, and `TestFailoverEndToEnd` covers the real binary from `client on` to a replayed PR. Removing any one safety rule (no force, the already-on-GitHub check, the PR-only rule, the PR lookup, held branches) makes the tests fail. Not yet run against the sandbox organisation, and that needs the read-write App.*
 
-## 7. Milestone 3: issue and comment replay (about 2.5 weeks)
+## 7. Milestone 3: issue and comment replay
 
 **Goal:** comments and new issues survive an outage and come back exactly once.
 
@@ -157,7 +157,7 @@ Tasks:
 
 **Exit:** a fault campaign on comments and issues passes all applicable checks, including a created item that doesn't show up in listings for a while. Case 6 in section 8.3 ends in `uncertain`, never a repost.
 
-## 8. Milestone 4: PRs, reviews and local merging (about 3 weeks)
+## 8. Milestone 4: PRs, reviews and local merging
 
 **Goal:** the full workflow in section 3 of the design works, including reviews that reach GitHub under the reviewer's name.
 
@@ -181,7 +181,7 @@ Tasks:
 
 **Exit:** a fault campaign including local merges, merge conflicts, reviews, replies, resolved conversations and stale approvals passes all six checks, and a smaller run passes against the sandbox organisation.
 
-## 9. Milestone 5: seamless failover (1.5–2 weeks)
+## 9. Milestone 5: seamless failover
 
 **Goal:** switching happens without manual steps when the admin opts in, and slow GitHub is handled.
 
@@ -198,7 +198,7 @@ Tasks:
 
 ## 10. Milestones 6 to 8
 
-### Milestone 6: proof and launch 1.0 (1–1.5 weeks)
+### Milestone 6: proof and launch 1.0
 
 - [ ] Run the large fault campaign across the full scenario matrix (section 12), triage every failure, and keep a bug list with the fix for each.
 - [ ] Run the full scenario against the sandbox organisation.
@@ -209,7 +209,7 @@ Tasks:
 
 **Exit:** a stranger can install it from the README alone, and the results are published.
 
-### Milestone 7: backup protections and mirror hardening (about 2 weeks)
+### Milestone 7: backup protections and mirror hardening
 
 - [ ] History refs under `refs/gitcove/history/<timestamp>/...`, saved before any fetch that moves or removes a ref, with a daily 90-day removal job.
 - [ ] Hide history and GitHub refs with `hideRefs`, and test whether a client can still fetch them by commit ID. If it can, move history into a separate repository.
@@ -222,7 +222,7 @@ Tasks:
 
 **Exit:** a force-pushed branch can be brought back and survives the next sync, clients can't fetch hidden history by commit ID, and with dropped, repeated and out-of-order webhooks a second full sync finds no unexplained differences.
 
-### Milestone 8: extras (1.5–2 weeks)
+### Milestone 8: extras
 
 - [ ] Design note for the isolated test runner first: no network, no secrets, one team-chosen command, result shown as information, never a deploy.
 - [ ] Implement the runner and show its result on replay PRs.
@@ -240,7 +240,7 @@ Tasks:
 | D4 | Default approvals needed for a local merge | Start of milestone 4 | 1, and not the author |
 | D5 | Whether local merges may also be squash or rebase. They would break commit-bound approvals | Start of milestone 4 | No. Merge commits only |
 | D6 | Automatic failover defaults (duration, cooldown, degraded thresholds) | Start of milestone 5 | 10 minutes, with other values set by testing |
-| D7 | Alert channel for the admin | Start of milestone 2 | Log plus an optional webhook |
+| D7 | Alert channel for the admin | Default taken in milestone 2 | Log plus an optional webhook (`COVE_ALERT_WEBHOOK`) |
 
 ## 12. Fault scenarios by milestone
 

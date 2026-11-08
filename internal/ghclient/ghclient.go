@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"sync"
@@ -29,6 +30,26 @@ type Client interface {
 	GitToken(ctx context.Context) (string, error)
 	// Probe makes one cheap authenticated API call, for health checks.
 	Probe(ctx context.Context) error
+	// Branches lists a repo's branches with GitHub's protected flag.
+	Branches(ctx context.Context, owner, repo string) ([]Branch, error)
+	// FindPR returns the number of a PR from head (a branch in the same repo) in any state, or 0.
+	FindPR(ctx context.Context, owner, repo, head string) (int, error)
+	// CreatePR opens a PR and returns its number.
+	CreatePR(ctx context.Context, owner, repo string, pr NewPR) (int, error)
+}
+
+// Branch is a branch from the branch listing. Protected is true for classic protection and for
+// any active repo or organisation ruleset (spike A).
+type Branch struct {
+	Name      string `json:"name"`
+	Protected bool   `json:"protected"`
+}
+
+type NewPR struct {
+	Title string `json:"title"`
+	Head  string `json:"head"`
+	Base  string `json:"base"`
+	Body  string `json:"body"`
 }
 
 type Repo struct {
@@ -155,6 +176,39 @@ func (a *App) Repos(ctx context.Context) ([]Repo, error) {
 	return all, nil
 }
 
+func (a *App) Branches(ctx context.Context, owner, repo string) ([]Branch, error) {
+	var all []Branch
+	for u := fmt.Sprintf("%s/repos/%s/%s/branches?per_page=100", a.API, owner, repo); u != ""; {
+		var page []Branch
+		next, err := a.get(ctx, u, &page)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, page...)
+		u = next
+	}
+	return all, nil
+}
+
+func (a *App) FindPR(ctx context.Context, owner, repo, head string) (int, error) {
+	var prs []struct {
+		Number int `json:"number"`
+	}
+	u := fmt.Sprintf("%s/repos/%s/%s/pulls?state=all&head=%s", a.API, owner, repo, url.QueryEscape(owner+":"+head))
+	if _, err := a.get(ctx, u, &prs); err != nil || len(prs) == 0 {
+		return 0, err
+	}
+	return prs[0].Number, nil
+}
+
+func (a *App) CreatePR(ctx context.Context, owner, repo string, pr NewPR) (int, error) {
+	var out struct {
+		Number int `json:"number"`
+	}
+	err := a.send(ctx, "POST", fmt.Sprintf("%s/repos/%s/%s/pulls", a.API, owner, repo), pr, &out)
+	return out.Number, err
+}
+
 func (a *App) Probe(ctx context.Context) error {
 	_, err := a.get(ctx, a.API+"/rate_limit", nil) // rate_limit calls don't count against the limit
 	return err
@@ -169,14 +223,9 @@ func (a *App) get(ctx context.Context, url string, v any) (string, error) {
 	a.mu.Lock()
 	c := a.etags[url]
 	a.mu.Unlock()
-	resp, body, err := a.do(ctx, "GET", url, tok, c.etag)
+	resp, body, err := a.do(ctx, "GET", url, tok, c.etag, nil)
 	if err != nil {
-		var se *StatusError
-		if errors.As(err, &se) && se.Status == http.StatusUnauthorized {
-			a.mu.Lock()
-			a.token = "" // revoked or expired early: mint a new one next time
-			a.mu.Unlock()
-		}
+		a.dropTokenOn401(err)
 		return "", err
 	}
 	if resp.StatusCode == http.StatusNotModified {
@@ -201,9 +250,36 @@ func (a *App) get(ctx context.Context, url string, v any) (string, error) {
 	return next, nil
 }
 
+func (a *App) dropTokenOn401(err error) {
+	var se *StatusError
+	if errors.As(err, &se) && se.Status == http.StatusUnauthorized {
+		a.mu.Lock()
+		a.token = "" // revoked or expired early: mint a new one next time
+		a.mu.Unlock()
+	}
+}
+
+// send does an installation-authenticated write with a JSON body and decodes the response into v.
+func (a *App) send(ctx context.Context, method, url string, in, v any) error {
+	tok, err := a.GitToken(ctx)
+	if err != nil {
+		return err
+	}
+	body, err := json.Marshal(in)
+	if err != nil {
+		return err
+	}
+	_, resp, err := a.do(ctx, method, url, tok, "", body)
+	if err != nil {
+		a.dropTokenOn401(err)
+		return err
+	}
+	return json.Unmarshal(resp, v)
+}
+
 // call does a request with an explicit bearer token and decodes the JSON response into v.
 func (a *App) call(ctx context.Context, method, url, bearer string, v any) error {
-	_, body, err := a.do(ctx, method, url, bearer, "")
+	_, body, err := a.do(ctx, method, url, bearer, "", nil)
 	if err != nil {
 		return err
 	}
@@ -211,13 +287,16 @@ func (a *App) call(ctx context.Context, method, url, bearer string, v any) error
 }
 
 // do sends one request through the rate limiter. Non-2xx responses other than 304 become a *StatusError.
-func (a *App) do(ctx context.Context, method, url, bearer, etag string) (*http.Response, []byte, error) {
+func (a *App) do(ctx context.Context, method, url, bearer, etag string, reqBody []byte) (*http.Response, []byte, error) {
 	if err := a.limit.wait(ctx); err != nil {
 		return nil, nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, method, url, nil)
+	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(reqBody))
 	if err != nil {
 		return nil, nil, err
+	}
+	if reqBody != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Authorization", "Bearer "+bearer)
 	req.Header.Set("Accept", "application/vnd.github+json")

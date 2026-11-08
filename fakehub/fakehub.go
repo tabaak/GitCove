@@ -1,9 +1,12 @@
-// Package fakehub is a GitHub stand-in for tests: App authentication, repo listing and Git smart
-// HTTP, with seeded faults so any failing run can be repeated exactly.
+// Package fakehub is a GitHub stand-in for tests: App authentication, repo and branch listing,
+// Git smart HTTP including pushes, and PR creation, with seeded faults so any failing run can be
+// repeated exactly. Pushes are refused the way GitHub refuses them from an App: protected
+// branches, and workflow trees that match no branch tip (spike W).
 package fakehub
 
 import (
 	"bytes"
+	"cmp"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -12,6 +15,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -22,6 +26,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -41,7 +46,19 @@ type Faults struct {
 	ErrorRate        float64 // answer 500
 	TimeoutRate      float64 // hang until the client gives up
 	CutRate          float64 // cut a Git pack response off partway
+	LostRate         float64 // carry out a write (push or PR creation), then drop the connection unanswered
 }
+
+// PR is a pull request created through the API.
+type PR struct {
+	Number      int
+	Head, Base  string
+	Title, Body string
+	State       string
+}
+
+// Push is one ref update a push made, from the post-receive log.
+type Push struct{ Old, New, Ref string }
 
 type Hub struct {
 	*httptest.Server
@@ -58,6 +75,8 @@ type Hub struct {
 	tokens    map[string]time.Time
 	remaining int
 	git       string
+	hooks     string
+	prs       map[string][]PR // by repo name
 }
 
 // New starts a fakehub whose faults are drawn from seed. It shuts down when the test ends.
@@ -70,13 +89,21 @@ func New(t testing.TB, seed uint64) *Hub {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := &Hub{Org: "fakeorg", AppID: "1", Key: key, Root: t.TempDir(), git: git,
-		rng: mrand.New(mrand.NewPCG(seed, seed)), tokens: map[string]time.Time{}, remaining: 5000}
+	h := &Hub{Org: "fakeorg", AppID: "1", Key: key, Root: t.TempDir(), git: git, hooks: t.TempDir(),
+		rng: mrand.New(mrand.NewPCG(seed, seed)), tokens: map[string]time.Time{}, remaining: 5000, prs: map[string][]PR{}}
+	for name, body := range map[string]string{"pre-receive": preReceive, "post-receive": "#!/bin/sh\ncat >> pushlog\n"} {
+		if err := os.WriteFile(filepath.Join(h.hooks, name), []byte(body), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /orgs/{org}/installation", h.app(h.installation))
 	mux.HandleFunc("POST /app/installations/{id}/access_tokens", h.app(h.accessToken))
 	mux.HandleFunc("GET /installation/repositories", h.inst(h.repos))
 	mux.HandleFunc("GET /rate_limit", h.inst(h.rateLimit))
+	mux.HandleFunc("GET /repos/{org}/{repo}/branches", h.inst(h.repo(h.branches)))
+	mux.HandleFunc("GET /repos/{org}/{repo}/pulls", h.inst(h.repo(h.listPRs)))
+	mux.HandleFunc("POST /repos/{org}/{repo}/pulls", h.inst(h.repo(h.createPR)))
 	mux.HandleFunc("/{org}/{repo}/{rest...}", h.serveGit)
 	h.Server = httptest.NewServer(h.withFaults(mux))
 	t.Cleanup(func() { h.CloseClientConnections(); h.Close() }) // hung timeout-fault requests would block Close
@@ -109,6 +136,14 @@ func (h *Hub) withFaults(next http.Handler) http.Handler {
 		}
 		if isGit && r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/git-upload-pack") && cut < f.CutRate {
 			w = &cutWriter{w, cutAt}
+		}
+		write := r.Method == "POST" && (strings.HasSuffix(r.URL.Path, "/git-receive-pack") || strings.HasSuffix(r.URL.Path, "/pulls"))
+		if write && cut < f.LostRate {
+			next.ServeHTTP(httptest.NewRecorder(), r) // done, but the answer never arrives
+			if conn, _, err := w.(http.Hijacker).Hijack(); err == nil {
+				conn.Close()
+			}
+			return
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -189,7 +224,7 @@ func (h *Hub) accessToken(w http.ResponseWriter, r *http.Request) {
 	h.tokens[tok] = exp
 	h.mu.Unlock()
 	h.json(w, r, http.StatusCreated, map[string]any{"token": tok, "expires_at": exp.Format(time.RFC3339),
-		"permissions": map[string]string{"contents": "read", "metadata": "read"}, "repository_selection": "selected"})
+		"permissions": map[string]string{"contents": "write", "metadata": "read", "pull_requests": "write"}, "repository_selection": "selected"})
 }
 
 func (h *Hub) repos(w http.ResponseWriter, r *http.Request) {
@@ -264,7 +299,153 @@ func (h *Hub) serveGit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	(&cgi.Handler{Path: h.git, Args: []string{"http-backend"},
-		Env: []string{"GIT_PROJECT_ROOT=" + h.Root, "GIT_HTTP_EXPORT_ALL=1"}}).ServeHTTP(w, r)
+		Env: []string{"GIT_PROJECT_ROOT=" + h.Root, "GIT_HTTP_EXPORT_ALL=1", "GIT_CONFIG_COUNT=2",
+			"GIT_CONFIG_KEY_0=http.receivepack", "GIT_CONFIG_VALUE_0=true",
+			"GIT_CONFIG_KEY_1=core.hooksPath", "GIT_CONFIG_VALUE_1=" + h.hooks}}).ServeHTTP(w, r)
+}
+
+// preReceive refuses pushes to branches listed in the repo's "protected" file, and pushes whose
+// .github/workflows tree matches no current branch tip, as GitHub does without the workflows permission.
+const preReceive = `#!/bin/sh
+while read old new ref; do
+  b=${ref#refs/heads/}
+  if [ -f protected ] && grep -qxF "$b" protected; then
+    echo "error: GH006: Protected branch update failed for $ref." >&2; exit 1
+  fi
+  case "$new" in *[!0]*) ;; *) continue ;; esac
+  want=$(git rev-parse -q --verify "$new:.github/workflows" || echo none)
+  ok=
+  for tip in $(git for-each-ref --format='%(objectname)' refs/heads/); do
+    [ "$(git rev-parse -q --verify "$tip:.github/workflows" || echo none)" = "$want" ] && { ok=1; break; }
+  done
+  [ -n "$ok" ] || { echo "refusing to allow a GitHub App to create or update workflow without workflows permission" >&2; exit 1; }
+done
+`
+
+// repo answers 404 for repos fakehub doesn't have.
+func (h *Hub) repo(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if _, err := os.Stat(h.Dir(r.PathValue("repo"))); r.PathValue("org") != h.Org || err != nil {
+			h.json(w, r, http.StatusNotFound, map[string]any{"message": "Not Found"})
+			return
+		}
+		next(w, r)
+	}
+}
+
+func (h *Hub) protected(name string) map[string]bool {
+	b, _ := os.ReadFile(filepath.Join(h.Dir(name), "protected"))
+	out := map[string]bool{}
+	for _, l := range strings.Fields(string(b)) {
+		out[l] = true
+	}
+	return out
+}
+
+func (h *Hub) branches(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("repo")
+	prot := h.protected(name)
+	out, _ := exec.Command(h.git, "-C", h.Dir(name), "for-each-ref", "--format=%(refname:lstrip=2) %(objectname)", "refs/heads/").Output()
+	list := []map[string]any{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if b, sha, ok := strings.Cut(line, " "); ok {
+			list = append(list, map[string]any{"name": b, "commit": map[string]any{"sha": sha}, "protected": prot[b]})
+		}
+	}
+	h.json(w, r, http.StatusOK, list)
+}
+
+func prJSON(pr PR) map[string]any {
+	return map[string]any{"number": pr.Number, "state": pr.State, "title": pr.Title, "body": pr.Body,
+		"head": map[string]any{"ref": pr.Head}, "base": map[string]any{"ref": pr.Base}}
+}
+
+func (h *Hub) listPRs(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	_, head, _ := strings.Cut(q.Get("head"), ":")
+	state := cmp.Or(q.Get("state"), "open")
+	h.mu.Lock()
+	list := []map[string]any{}
+	for _, pr := range h.prs[r.PathValue("repo")] {
+		if (head == "" || pr.Head == head) && (state == "all" || pr.State == state) {
+			list = append(list, prJSON(pr))
+		}
+	}
+	h.mu.Unlock()
+	h.json(w, r, http.StatusOK, list)
+}
+
+func (h *Hub) createPR(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("repo")
+	var in struct{ Title, Head, Base, Body string }
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Title == "" {
+		h.json(w, r, http.StatusUnprocessableEntity, map[string]any{"message": "Validation Failed"})
+		return
+	}
+	if i := strings.Index(in.Head, ":"); i >= 0 {
+		in.Head = in.Head[i+1:]
+	}
+	fail := func(msg string) {
+		h.json(w, r, http.StatusUnprocessableEntity, map[string]any{"message": "Validation Failed",
+			"errors": []map[string]any{{"resource": "PullRequest", "code": "custom", "message": msg}}})
+	}
+	ref := func(b string) string {
+		out, _ := exec.Command(h.git, "-C", h.Dir(name), "rev-parse", "-q", "--verify", "refs/heads/"+b).Output()
+		return strings.TrimSpace(string(out))
+	}
+	head, base := ref(in.Head), ref(in.Base)
+	if head == "" || base == "" {
+		fail("head or base doesn't exist")
+		return
+	}
+	if exec.Command(h.git, "-C", h.Dir(name), "merge-base", "--is-ancestor", head, base).Run() == nil {
+		fail("No commits between " + in.Base + " and " + in.Head)
+		return
+	}
+	h.mu.Lock()
+	for _, pr := range h.prs[name] {
+		if pr.State == "open" && pr.Head == in.Head && pr.Base == in.Base {
+			h.mu.Unlock()
+			fail(fmt.Sprintf("A pull request already exists for %s:%s.", h.Org, in.Head))
+			return
+		}
+	}
+	pr := PR{Number: 100 + len(h.prs[name]), Head: in.Head, Base: in.Base, Title: in.Title, Body: in.Body, State: "open"}
+	h.prs[name] = append(h.prs[name], pr)
+	h.mu.Unlock()
+	h.json(w, r, http.StatusCreated, prJSON(pr))
+}
+
+// PRs returns the PRs created in repo name.
+func (h *Hub) PRs(name string) []PR {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return slices.Clone(h.prs[name])
+}
+
+// Protect makes pushes to branch in repo name fail as GitHub's branch protection would, and
+// sets the branch listing's protected flag.
+func (h *Hub) Protect(t testing.TB, name, branch string) {
+	f, err := os.OpenFile(filepath.Join(h.Dir(name), "protected"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err == nil {
+		_, err = fmt.Fprintln(f, branch)
+		err = errors.Join(err, f.Close())
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Pushes returns every ref update made by a push to repo name, in order.
+func (h *Hub) Pushes(name string) []Push {
+	b, _ := os.ReadFile(filepath.Join(h.Dir(name), "pushlog"))
+	var out []Push
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		if f := strings.Fields(line); len(f) == 3 {
+			out = append(out, Push{f[0], f[1], f[2]})
+		}
+	}
+	return out
 }
 
 // RepoID is the GitHub ID fakehub gives the repo called name.
@@ -303,6 +484,20 @@ func (h *Hub) Commit(t testing.TB, name, branch string) string {
 	return sha
 }
 
+// CommitFile commits path with content on top of branch's tree and returns the commit ID.
+func (h *Hub) CommitFile(t testing.TB, name, branch, path, content string) string {
+	dir := h.Dir(name)
+	parent := h.gitT(t, dir, "rev-parse", "refs/heads/"+branch)
+	blob := h.gitIn(t, dir, content, "hash-object", "-w", "--stdin")
+	idx := []string{"GIT_INDEX_FILE=" + filepath.Join(t.TempDir(), "index")}
+	h.gitEnv(t, dir, idx, "", "read-tree", parent)
+	h.gitEnv(t, dir, idx, "", "update-index", "--add", "--cacheinfo", "100644,"+blob+","+path)
+	tree := h.gitEnv(t, dir, idx, "", "write-tree")
+	sha := h.gitT(t, dir, "commit-tree", tree, "-p", parent, "-m", "change "+path)
+	h.gitT(t, dir, "update-ref", "refs/heads/"+branch, sha, parent)
+	return sha
+}
+
 // Refs returns the repo's refs and the objects they point to.
 func (h *Hub) Refs(t testing.TB, name string) map[string]string {
 	refs := map[string]string{}
@@ -320,10 +515,15 @@ func (h *Hub) gitT(t testing.TB, dir string, args ...string) string {
 
 func (h *Hub) gitIn(t testing.TB, dir, stdin string, args ...string) string {
 	t.Helper()
+	return h.gitEnv(t, dir, nil, stdin, args...)
+}
+
+func (h *Hub) gitEnv(t testing.TB, dir string, env []string, stdin string, args ...string) string {
+	t.Helper()
 	cmd := exec.Command(h.git, args...)
 	cmd.Dir = dir
 	cmd.Stdin = strings.NewReader(stdin)
-	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=fakehub", "GIT_AUTHOR_EMAIL=fakehub@example.invalid",
+	cmd.Env = append(append(os.Environ(), env...), "GIT_AUTHOR_NAME=fakehub", "GIT_AUTHOR_EMAIL=fakehub@example.invalid",
 		"GIT_COMMITTER_NAME=fakehub", "GIT_COMMITTER_EMAIL=fakehub@example.invalid")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

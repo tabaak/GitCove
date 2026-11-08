@@ -4,6 +4,7 @@ package web
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -49,19 +50,26 @@ func (s *Server) git(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	if ok, err := s.Store.TokenCanRead(ctx, tok, repo.ID); err != nil {
+	pusher, err := s.Store.TokenAccess(ctx, tok, repo.ID)
+	if err != nil {
 		s.fail(w, err)
 		return
-	} else if !ok {
+	} else if pusher == "" {
 		http.NotFound(w, r) // same answer as a missing repo, so tokens can't probe for repo names
 		return
 	}
 	rest := "/" + r.PathValue("rest")
 	if rest == "/git-receive-pack" || r.URL.Query().Get("service") == "git-receive-pack" {
-		http.Error(w, "GitCove accepts pushes only during failover; push to GitHub", http.StatusForbidden)
-		return
+		// A quick refusal; the pre-receive hook checks the mode again, atomically with recording the push.
+		if mode, err := s.Store.Mode(ctx); err != nil {
+			s.fail(w, err)
+			return
+		} else if mode != store.Failover {
+			http.Error(w, "GitCove accepts pushes only during failover; push to GitHub", http.StatusForbidden)
+			return
+		}
 	}
-	s.Git.Handler(repo.GitHubID, rest).ServeHTTP(w, r)
+	s.Git.Handler(repo.GitHubID, rest, "COVE_DB="+s.Store.Path(), fmt.Sprintf("COVE_REPO_ID=%d", repo.ID), "COVE_PUSHER="+pusher).ServeHTTP(w, r)
 }
 
 // status is public, so it shows counts and health but no repo names or errors.
@@ -81,7 +89,13 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 			API health.Result `json:"api"`
 			Git health.Result `json:"git"`
 		} `json:"github"`
-	}{Mode: "normal", Repos: len(repos)}
+	}{Repos: len(repos)}
+	mode, err := s.Store.Mode(r.Context())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	st.Mode = string(mode)
 	for _, r := range repos {
 		switch {
 		case r.SyncedAt == "":

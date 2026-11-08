@@ -2,7 +2,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -21,18 +23,33 @@ import (
 	"github.com/tabaak/gitcove/internal/gitstore"
 	"github.com/tabaak/gitcove/internal/health"
 	"github.com/tabaak/gitcove/internal/mirror"
+	"github.com/tabaak/gitcove/internal/replay"
 	"github.com/tabaak/gitcove/internal/store"
 	"github.com/tabaak/gitcove/internal/web"
 )
 
 const usage = `usage: cove <command>
 
-  serve                                    run the server: sync, health checks, Git over HTTP, /status
+  serve                                    run the server: sync, health checks, replay, Git over HTTP, /status
   sync                                     mirror every repo once and exit
   token create -name NAME -repo OWNER/REPO [-repo ...]
                                            issue a token; its secret is printed once
   token list
   token revoke ID
+
+  failover start                           accept pushes while GitHub is down
+  failover allow-protected on|off          allow direct pushes to protected branches, for this failover only
+  failover end                             refuse pushes again, catch up with GitHub and show the replay plan
+  replay plan                              dry run: what replay would push, and what needs a human
+  replay approve                           let the server replay the plan
+  replay skip ID | replay retry ID         settle a conflict: drop it, or queue it again
+  branch list
+  branch mark|unmark OWNER/REPO BRANCH protected|deploy
+                                           extra protected branches; deploy branches reach GitHub only through a PR
+  repo pr-only OWNER/REPO on|off           send default and deploy branch work as PRs (default on)
+
+  client setup -url URL -org ORG           on a developer machine: save GitCove's address and token (COVE_TOKEN or stdin)
+  client on | client off                   send Git for the organisation to GitCove, or back to GitHub
 
 Configuration comes from COVE_* environment variables (see README.md).
 `
@@ -48,6 +65,12 @@ func run(args []string) error {
 	if len(args) == 0 {
 		fmt.Fprint(os.Stderr, usage)
 		return errors.New("no command")
+	}
+	switch args[0] {
+	case "hook": // run by git-receive-pack, not by people
+		os.Exit(gitstore.RunHook(args[1:]))
+	case "client":
+		return clientCmd(args[1:])
 	}
 	cfg, err := loadConfig()
 	if err != nil {
@@ -65,6 +88,14 @@ func run(args []string) error {
 		return a.mirror.Cycle(context.Background())
 	case "token":
 		return tokenCmd(cfg, args[1:])
+	case "failover":
+		return failoverCmd(cfg, args[1:])
+	case "replay":
+		return replayCmd(cfg, args[1:])
+	case "branch":
+		return branchCmd(cfg, args[1:])
+	case "repo":
+		return repoCmd(cfg, args[1:])
 	}
 	fmt.Fprint(os.Stderr, usage)
 	return fmt.Errorf("unknown command %q", args[0])
@@ -73,7 +104,9 @@ func run(args []string) error {
 type config struct {
 	Data, Listen, TLSCert, TLSKey     string
 	API, GitURL, Org, AppID, KeyFile  string
+	AlertWebhook                      string
 	SyncEvery, HealthEvery, FetchTime time.Duration
+	ReplayEvery                       time.Duration
 }
 
 func loadConfig() (config, error) {
@@ -87,6 +120,8 @@ func loadConfig() (config, error) {
 		Org:     os.Getenv("COVE_ORG"),
 		AppID:   os.Getenv("COVE_APP_ID"),
 		KeyFile: os.Getenv("COVE_APP_KEY_FILE"),
+
+		AlertWebhook: os.Getenv("COVE_ALERT_WEBHOOK"),
 	}
 	var err error
 	for _, d := range []struct {
@@ -97,6 +132,7 @@ func loadConfig() (config, error) {
 		{&c.SyncEvery, "COVE_SYNC_INTERVAL", "5m"},
 		{&c.HealthEvery, "COVE_HEALTH_INTERVAL", "30s"},
 		{&c.FetchTime, "COVE_FETCH_TIMEOUT", "10m"},
+		{&c.ReplayEvery, "COVE_REPLAY_INTERVAL", "30s"},
 	} {
 		if *d.dst, err = time.ParseDuration(env(d.name, d.def)); err != nil {
 			return c, fmt.Errorf("%s: %w", d.name, err)
@@ -116,6 +152,7 @@ type app struct {
 	store  *store.Store
 	git    *gitstore.Store
 	mirror *mirror.Mirror
+	replay *replay.Replayer
 	health *health.Checker
 	log    *slog.Logger
 }
@@ -150,13 +187,33 @@ func build(cfg config) (*app, error) {
 	}
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	gh := &ghclient.App{API: cfg.API, AppID: cfg.AppID, Key: key, Org: cfg.Org, HTTP: &http.Client{Timeout: time.Minute}}
+	m := &mirror.Mirror{GH: gh, Store: st, Git: gs, FetchTimeout: cfg.FetchTime, Log: log}
 	return &app{
 		store:  st,
 		git:    gs,
-		mirror: &mirror.Mirror{GH: gh, Store: st, Git: gs, FetchTimeout: cfg.FetchTime, Log: log},
+		mirror: m,
+		replay: &replay.Replayer{GH: gh, Store: st, Git: gs, Mirror: m, Log: log, Alert: alerter(cfg.AlertWebhook, log)},
 		health: &health.Checker{GH: gh, HTTP: &http.Client{Timeout: 10 * time.Second}, GitURL: gs.GitURL, Store: st, Log: log},
 		log:    log,
 	}, nil
+}
+
+// alerter tells the admin: always in the log, and also by POSTing {"text": msg} to webhook if set
+// (which suits Slack, Mattermost and similar incoming webhooks).
+func alerter(webhook string, log *slog.Logger) func(string) {
+	return func(msg string) {
+		log.Error("ALERT: " + msg)
+		if webhook == "" {
+			return
+		}
+		body, _ := json.Marshal(map[string]string{"text": "GitCove: " + msg})
+		resp, err := (&http.Client{Timeout: 10 * time.Second}).Post(webhook, "application/json", bytes.NewReader(body))
+		if err != nil {
+			log.Error("alert webhook failed", "err", err)
+			return
+		}
+		resp.Body.Close()
+	}
 }
 
 func serve(cfg config) error {
@@ -169,6 +226,7 @@ func serve(cfg config) error {
 	defer stop()
 
 	go a.mirror.Run(ctx, cfg.SyncEvery)
+	go a.replay.Run(ctx, cfg.ReplayEvery)
 	go a.health.Run(ctx, cfg.HealthEvery, 15*time.Second)
 
 	// No write timeout: clones of large repos can take a long time.
@@ -208,7 +266,7 @@ func tokenCmd(cfg config, args []string) error {
 	}
 	defer st.Close()
 	ctx := context.Background()
-	actor := "cli:" + env("USER", "unknown")
+	actor := cliActor()
 	switch args[0] {
 	case "create":
 		fs := flag.NewFlagSet("token create", flag.ContinueOnError)

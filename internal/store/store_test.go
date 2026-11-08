@@ -27,11 +27,11 @@ func TestTokensAndAudit(t *testing.T) {
 		t.Fatal(err)
 	}
 	can := func(tok string, repo int64) bool {
-		ok, err := s.TokenCanRead(ctx, tok, repo)
+		name, err := s.TokenAccess(ctx, tok, repo)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return ok
+		return name == "alice"
 	}
 	if !can(plain, a) || can(plain, b) || can("cove_wrong", a) {
 		t.Fatal("token access wrong before revoke")
