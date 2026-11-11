@@ -2,6 +2,7 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -170,6 +171,7 @@ type Token struct {
 	CreatedAt string
 	RevokedAt string
 	Repos     []string // owner/name
+	GitHub    string   // login of the GitHub account its holder authorised (decision D3), if any
 }
 
 func hashToken(plain string) []byte { h := sha256.Sum256([]byte(plain)); return h[:] }
@@ -211,15 +213,35 @@ func (s *Store) RevokeToken(ctx context.Context, actor string, id int64) error {
 		if n, _ := res.RowsAffected(); n == 0 {
 			return fmt.Errorf("token %d: %w or already revoked", id, ErrNotFound)
 		}
+		if _, err := tx.Exec("DELETE FROM user_tokens WHERE token_id = ?", id); err != nil {
+			return err
+		}
 		return audit(tx, actor, "token.revoke", fmt.Sprintf("id=%d", id))
 	})
 }
 
-func (s *Store) Tokens(ctx context.Context) ([]Token, error) {
+func (s *Store) Tokens(ctx context.Context) ([]Token, error) { return s.tokens(ctx, "1", nil) }
+
+// TokenFor returns plain's token, with its repos, if it is unrevoked.
+func (s *Store) TokenFor(ctx context.Context, plain string) (Token, error) {
+	toks, err := s.tokens(ctx, "t.hash = ? AND t.revoked_at IS NULL", hashToken(plain))
+	if err != nil || len(toks) == 0 {
+		return Token{}, cmp.Or(err, ErrNotFound)
+	}
+	return toks[0], nil
+}
+
+func (s *Store) tokens(ctx context.Context, where string, arg any) ([]Token, error) {
+	var args []any
+	if arg != nil {
+		args = append(args, arg)
+	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT t.id, t.name, t.created_at, coalesce(t.revoked_at, ''), coalesce(group_concat(r.owner || '/' || r.name, ','), '')
+		SELECT t.id, t.name, t.created_at, coalesce(t.revoked_at, ''), coalesce(group_concat(r.owner || '/' || r.name, ','), ''),
+			coalesce(u.login, '')
 		FROM tokens t LEFT JOIN token_repos tr ON tr.token_id = t.id LEFT JOIN repos r ON r.id = tr.repo_id
-		GROUP BY t.id ORDER BY t.id`)
+		LEFT JOIN user_tokens u ON u.token_id = t.id
+		WHERE `+where+` GROUP BY t.id ORDER BY t.id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +250,7 @@ func (s *Store) Tokens(ctx context.Context) ([]Token, error) {
 	for rows.Next() {
 		var t Token
 		var repos string
-		if err := rows.Scan(&t.ID, &t.Name, &t.CreatedAt, &t.RevokedAt, &repos); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.CreatedAt, &t.RevokedAt, &repos, &t.GitHub); err != nil {
 			return nil, err
 		}
 		if repos != "" {

@@ -36,6 +36,21 @@ type Client interface {
 	FindPR(ctx context.Context, owner, repo, head string) (int, error)
 	// CreatePR opens a PR and returns its number.
 	CreatePR(ctx context.Context, owner, repo string, pr NewPR) (int, error)
+
+	IssuesSince(ctx context.Context, owner, repo, since string, f func([]Issue) error) error
+	CommentsSince(ctx context.Context, owner, repo, since string, f func([]Comment) error) error
+	Labels(ctx context.Context, owner, repo string) ([]string, error)
+	Issue(ctx context.Context, owner, repo string, n int) (Issue, error)
+	IssuesBy(ctx context.Context, owner, repo, creator, since string) ([]Issue, error)
+	IssueComments(ctx context.Context, owner, repo string, n int, since string) ([]Comment, error)
+	AppLogin(ctx context.Context) (string, error)
+
+	// Writes act as the person holding user token user, or as the App if user is "".
+	CreateIssue(ctx context.Context, owner, repo, user string, in NewIssue) (int, error)
+	CreateComment(ctx context.Context, owner, repo string, n int, user, body string) (int64, error)
+	EditIssue(ctx context.Context, owner, repo string, n int, user string, fields map[string]string) error
+	AddLabel(ctx context.Context, owner, repo string, n int, user, label string) error
+	RemoveLabel(ctx context.Context, owner, repo string, n int, user, label string) error
 }
 
 // Branch is a branch from the branch listing. Protected is true for classic protection and for
@@ -64,6 +79,9 @@ type Repo struct {
 // ErrRateLimited is returned when a request would have to wait past the context deadline for GitHub's limit to reset.
 var ErrRateLimited = errors.New("github rate limit")
 
+// ErrNotSent wraps failures that happened before a request went out, so GitHub certainly didn't get it.
+var ErrNotSent = errors.New("request not sent")
+
 // StatusError is a non-2xx response.
 type StatusError struct {
 	Status  int
@@ -80,18 +98,34 @@ type App struct {
 	Org   string
 	HTTP  *http.Client
 
+	// For acting as people (decision D3): GitHub's web host, for the device flow and refreshing
+	// user tokens, and the App's OAuth client ID and secret.
+	Web, ClientID, ClientSecret string
+
+	Budget Budget // content-write budget; the zero value means DefaultBudget
+
 	mu       sync.Mutex
 	instID   int64
 	token    string
 	tokenExp time.Time
+	login    string
 	etags    map[string]cached
 	limit    limiter
+
+	wmu    sync.Mutex
+	writes []time.Time // writes in the last hour, oldest first
 }
 
 type cached struct {
-	etag string
-	body []byte
+	etag, next string
+	body       []byte
 }
+
+var sinceRe = regexp.MustCompile(`[?&]since=[^&]*`)
+
+// etagKey drops the since parameter, so a moving since reuses one cache entry instead of adding
+// one per value. Reusing an ETag across queries is safe: it is a hash of the response.
+func etagKey(u string) string { return sinceRe.ReplaceAllString(u, "") }
 
 // ParseKey reads an App private key in PEM (PKCS#1 as GitHub issues it, or PKCS#8).
 func ParseKey(pemBytes []byte) (*rsa.PrivateKey, error) {
@@ -205,7 +239,7 @@ func (a *App) CreatePR(ctx context.Context, owner, repo string, pr NewPR) (int, 
 	var out struct {
 		Number int `json:"number"`
 	}
-	err := a.send(ctx, "POST", fmt.Sprintf("%s/repos/%s/%s/pulls", a.API, owner, repo), pr, &out)
+	err := a.sendAs(ctx, "", "POST", fmt.Sprintf("%s/repos/%s/%s/pulls", a.API, owner, repo), pr, &out)
 	return out.Number, err
 }
 
@@ -220,32 +254,33 @@ func (a *App) get(ctx context.Context, url string, v any) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	key := etagKey(url)
 	a.mu.Lock()
-	c := a.etags[url]
+	c := a.etags[key]
 	a.mu.Unlock()
 	resp, body, err := a.do(ctx, "GET", url, tok, c.etag, nil)
 	if err != nil {
 		a.dropTokenOn401(err)
 		return "", err
 	}
+	next := ""
+	if m := nextLink.FindStringSubmatch(resp.Header.Get("Link")); m != nil {
+		next = m[1]
+	}
 	if resp.StatusCode == http.StatusNotModified {
-		body = c.body
+		body, next = c.body, c.next
 	} else if etag := resp.Header.Get("ETag"); etag != "" {
 		a.mu.Lock()
 		if a.etags == nil {
 			a.etags = map[string]cached{}
 		}
-		a.etags[url] = cached{etag, body}
+		a.etags[key] = cached{etag, next, body}
 		a.mu.Unlock()
 	}
 	if v != nil {
 		if err := json.Unmarshal(body, v); err != nil {
 			return "", fmt.Errorf("decode %s: %w", url, err)
 		}
-	}
-	next := ""
-	if m := nextLink.FindStringSubmatch(resp.Header.Get("Link")); m != nil {
-		next = m[1]
 	}
 	return next, nil
 }
@@ -257,24 +292,6 @@ func (a *App) dropTokenOn401(err error) {
 		a.token = "" // revoked or expired early: mint a new one next time
 		a.mu.Unlock()
 	}
-}
-
-// send does an installation-authenticated write with a JSON body and decodes the response into v.
-func (a *App) send(ctx context.Context, method, url string, in, v any) error {
-	tok, err := a.GitToken(ctx)
-	if err != nil {
-		return err
-	}
-	body, err := json.Marshal(in)
-	if err != nil {
-		return err
-	}
-	_, resp, err := a.do(ctx, method, url, tok, "", body)
-	if err != nil {
-		a.dropTokenOn401(err)
-		return err
-	}
-	return json.Unmarshal(resp, v)
 }
 
 // call does a request with an explicit bearer token and decodes the JSON response into v.
@@ -289,7 +306,7 @@ func (a *App) call(ctx context.Context, method, url, bearer string, v any) error
 // do sends one request through the rate limiter. Non-2xx responses other than 304 become a *StatusError.
 func (a *App) do(ctx context.Context, method, url, bearer, etag string, reqBody []byte) (*http.Response, []byte, error) {
 	if err := a.limit.wait(ctx); err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("%w: %w", ErrNotSent, err)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(reqBody))
 	if err != nil {

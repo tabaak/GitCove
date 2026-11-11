@@ -58,13 +58,14 @@ func setup(t *testing.T, seed uint64, repo string) *env {
 		t.Fatal(err)
 	}
 	log := slog.New(slog.DiscardHandler)
-	gh := &ghclient.App{API: hub.URL, AppID: hub.AppID, Key: hub.Key, Org: hub.Org, HTTP: &http.Client{Timeout: 5 * time.Second}}
+	gh := &ghclient.App{API: hub.URL, AppID: hub.AppID, Key: hub.Key, Org: hub.Org, HTTP: &http.Client{Timeout: 5 * time.Second},
+		Web: hub.URL, ClientID: fakehub.ClientID, ClientSecret: fakehub.ClientSecret, Budget: ghclient.Budget{PerMinute: 1e6, PerHour: 1e6}}
 	m := &mirror.Mirror{GH: gh, Store: st, Git: gs, FetchTimeout: 30 * time.Second, Log: log}
 	hc := &health.Checker{GH: gh, HTTP: &http.Client{Timeout: time.Second}, GitURL: hub.URL, Store: st, Log: log}
 	cove := httptest.NewServer((&web.Server{Store: st, Git: gs, Health: hc, Log: log}).Handler())
 	t.Cleanup(cove.Close)
 	e := &env{hub: hub, gh: gh, st: st, m: m, cove: cove,
-		r: &Replayer{GH: gh, Store: st, Git: gs, Mirror: m, Log: log}}
+		r: &Replayer{GH: gh, Store: st, Git: gs, Mirror: m, Log: log, MarkerWait: 100 * time.Millisecond}}
 	if err := m.Cycle(ctx); err != nil {
 		t.Fatal(err)
 	}

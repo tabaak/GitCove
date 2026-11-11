@@ -5,6 +5,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -15,7 +17,7 @@ import (
 // cove.url and cove.org, the token in Git's credential helper, and the url.insteadOf rule.
 func clientCmd(args []string) error {
 	if len(args) == 0 {
-		return errors.New("client: want setup, on or off")
+		return errors.New("client: want setup, on, off or authorise")
 	}
 	switch args[0] {
 	case "setup":
@@ -82,8 +84,60 @@ func clientCmd(args []string) error {
 		}
 		fmt.Printf("Git now sends %s's GitHub repos to %s. Existing clones work unchanged.\n", org, base)
 		return nil
+	case "authorise", "authorize":
+		return authorise()
 	}
 	return fmt.Errorf("client: unknown subcommand %q", args[0])
+}
+
+// authorise asks GitCove to link this token to the developer's GitHub account through GitHub's
+// device flow, and prints what GitCove streams back: the code to enter, then the outcome.
+func authorise() error {
+	base, err := gitOut("config", "--global", "--get", "cove.url")
+	if err != nil {
+		return errors.New("client: run `cove client setup` first")
+	}
+	u, err := url.Parse(base)
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("git", "credential", "fill")
+	cmd.Stdin = strings.NewReader(fmt.Sprintf("protocol=%s\nhost=%s\n\n", u.Scheme, u.Host))
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	out, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("no GitCove token in Git's credential helper (run `cove client setup`): %w", err)
+	}
+	var tok string
+	for _, l := range strings.Split(string(out), "\n") {
+		if v, ok := strings.CutPrefix(l, "password="); ok {
+			tok = v
+		}
+	}
+	req, err := http.NewRequest("POST", base+"/api/authorise", nil)
+	if err != nil {
+		return err
+	}
+	req.SetBasicAuth("x", tok)
+	resp, err := http.DefaultClient.Do(req) // no timeout: GitCove waits while the code is entered
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("GitCove said: %s", strings.TrimSpace(string(b)))
+	}
+	sc := bufio.NewScanner(resp.Body)
+	last := ""
+	for sc.Scan() {
+		last = sc.Text()
+		fmt.Println(last)
+	}
+	if !strings.HasPrefix(last, "ok:") {
+		return errors.New("not authorised")
+	}
+	return sc.Err()
 }
 
 func gitOut(args ...string) (string, error) {

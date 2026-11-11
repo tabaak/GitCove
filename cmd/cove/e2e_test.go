@@ -3,12 +3,15 @@ package main
 // End to end: the real cove binary (sync, token CLI, serve) against fakehub.
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,6 +44,11 @@ func start(t *testing.T) *e2e {
 	if err := os.WriteFile(keyFile, pemKey, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	secretFile, userKeyFile := filepath.Join(dir, "client-secret"), filepath.Join(dir, "user.key")
+	if err := errors.Join(os.WriteFile(secretFile, []byte(fakehub.ClientSecret+"\n"), 0o600),
+		os.WriteFile(userKeyFile, []byte(strings.Repeat("0f", 32)+"\n"), 0o600)); err != nil {
+		t.Fatal(err)
+	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -49,6 +57,7 @@ func start(t *testing.T) *e2e {
 	ln.Close()
 
 	env := append(os.Environ(), "COVE_ORG="+hub.Org, "COVE_APP_ID="+hub.AppID, "COVE_APP_KEY_FILE="+keyFile,
+		"COVE_APP_CLIENT_ID="+fakehub.ClientID, "COVE_APP_CLIENT_SECRET_FILE="+secretFile, "COVE_USER_KEY_FILE="+userKeyFile,
 		"COVE_DATA="+filepath.Join(dir, "data"), "COVE_LISTEN="+addr, "COVE_GITHUB_API="+hub.URL, "COVE_GITHUB_GIT="+hub.URL,
 		"COVE_HEALTH_INTERVAL=200ms", "COVE_SYNC_INTERVAL=1h", "COVE_REPLAY_INTERVAL=200ms", "GIT_TERMINAL_PROMPT=0")
 	x := &e2e{hub, bin, addr, env}
@@ -157,9 +166,11 @@ func TestBinaryEndToEnd(t *testing.T) {
 	}
 }
 
-// TestFailoverEndToEnd follows the outage story with the real binary: a developer's clone of the
-// GitHub URL goes to GitCove after `cove client on`, a push lands during failover, and after
-// `failover end` and `replay approve` the server replays it: a new branch directly, main as a PR.
+// TestFailoverEndToEnd follows the outage story with the real binary: a developer links their
+// GitHub account with `cove client authorise`, their clone of the GitHub URL goes to GitCove
+// after `cove client on`, a push lands during failover and they open an issue in the web
+// interface, and after `failover end` and `replay approve` the server replays it all: a new
+// branch directly, main as a PR, and the issue under their GitHub name.
 func TestFailoverEndToEnd(t *testing.T) {
 	x := start(t)
 	tok, e, err := x.cove("token", "create", "-name", "ben", "-repo", x.hub.Org+"/app")
@@ -189,6 +200,25 @@ func TestFailoverEndToEnd(t *testing.T) {
 	}
 	run("", x.bin, "client", "setup", "-url", "http://"+x.addr, "-org", x.hub.Org)
 
+	authorise := exec.Command(x.bin, "client", "authorise")
+	authorise.Env = devEnv
+	authOut, err := authorise.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := authorise.Start(); err != nil {
+		t.Fatal(err)
+	}
+	lines := bufio.NewScanner(authOut)
+	if !lines.Scan() || !strings.HasPrefix(lines.Text(), "Open ") {
+		t.Fatalf("client authorise: %q\nserver log:\n%s", lines.Text(), srvLog)
+	}
+	f := strings.Fields(lines.Text())
+	x.hub.ApproveDevice(f[len(f)-1], "ben-gh")
+	if !lines.Scan() || lines.Text() != "ok: GitCove will post your work from outages as ben-gh" || authorise.Wait() != nil {
+		t.Fatalf("client authorise: %q\nserver log:\n%s", lines.Text(), srvLog)
+	}
+
 	x.hub.SetFaults(fakehub.Faults{APIDown: true, GitDown: true})
 	if out, e, err := x.cove("failover", "start"); err != nil {
 		t.Fatalf("failover start: %v\n%s%s", err, out, e)
@@ -204,9 +234,20 @@ func TestFailoverEndToEnd(t *testing.T) {
 	sha := run(clone, "git", "rev-parse", "HEAD")
 	run(clone, "git", "push", "-q", "origin", "HEAD:refs/heads/fix", "HEAD:refs/heads/main")
 
+	req, _ := http.NewRequest("POST", "http://"+x.addr+"/"+x.hub.Org+"/app/issues",
+		strings.NewReader(url.Values{"title": {"outage bug"}, "body": {"found during the outage"}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth("x", tok)
+	resp, err := (&http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}).Do(req)
+	if err != nil || resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("new issue in the web interface: %v %v", resp, err)
+	}
+	resp.Body.Close()
+
 	x.hub.SetFaults(fakehub.Faults{})
 	out, e, err := x.cove("failover", "end")
-	if err != nil || !strings.Contains(out, "push to fix") || !strings.Contains(out, "open PR into main") || !strings.Contains(out, "replay approve") {
+	if err != nil || !strings.Contains(out, "push to fix") || !strings.Contains(out, "open PR into main") || !strings.Contains(out, "replay approve") ||
+		!strings.Contains(out, `new issue "outage bug"`) || !strings.Contains(out, "ben-gh") {
 		t.Fatalf("failover end: %v\n%s%s", err, out, e)
 	}
 	run("", x.bin, "client", "off")
@@ -220,5 +261,14 @@ func TestFailoverEndToEnd(t *testing.T) {
 	prs := x.hub.PRs("app")
 	if refs := x.hub.Refs(t, "app"); refs["refs/heads/fix"] != sha || len(prs) != 1 || prs[0].Base != "main" || refs["refs/heads/"+prs[0].Head] != sha {
 		t.Fatalf("GitHub after replay: fix=%s PRs=%+v", refs["refs/heads/fix"], prs)
+	}
+	var issue *fakehub.Issue
+	for _, i := range x.hub.Issues("app") {
+		if !i.PR {
+			issue = &i
+		}
+	}
+	if issue == nil || issue.Title != "outage bug" || issue.Author != "ben-gh" || !strings.HasPrefix(issue.Body, "found during the outage\n\n<sub>Written on GitCove at ") {
+		t.Fatalf("issue on GitHub after replay: %+v", issue)
 	}
 }

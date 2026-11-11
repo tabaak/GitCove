@@ -1,0 +1,132 @@
+{{define "head"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GitCove</title>
+<style>
+  :root { --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --bg: #fff; --warn: #fff8c5; --info: #ddf4ff; --accent: #0969da; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #e6edf3; --muted: #9198a1; --line: #3d444d; --bg: #0d1117; --warn: #3b2e00; --info: #0c2d4a; --accent: #4493f8; } }
+  body { font: 15px/1.5 system-ui, sans-serif; color: var(--fg); background: var(--bg); margin: 0 auto; max-width: 860px; padding: 0 16px 48px; }
+  header { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  header form { margin: 0; }
+  a { color: var(--accent); text-decoration: none; }
+  .banner { margin: 12px 0; padding: 8px 12px; border-radius: 6px; background: var(--info); }
+  .banner.failover { background: var(--warn); }
+  .muted { color: var(--muted); font-size: 13px; }
+  .badge { font-size: 12px; border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; margin-left: 4px; color: var(--muted); white-space: nowrap; }
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .post { border: 1px solid var(--line); border-radius: 6px; margin: 12px 0; }
+  .post > div { padding: 8px 12px; }
+  .post > .muted { border-bottom: 1px solid var(--line); }
+  input[type=text], textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 6px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+  textarea { min-height: 120px; }
+  button { font: inherit; padding: 4px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; }
+  form.inline { display: inline; }
+  details { margin: 12px 0; }
+</style>
+</head>
+<body>
+<header>
+  <a href="/"><strong>GitCove</strong></a>
+  {{if .User.Name}}<span class="muted">{{.User.Name}} <form class="inline" method="post" action="/logout"><button>Sign out</button></form></span>{{end}}
+</header>
+{{if .User.Name}}
+<div class="banner {{.Mode}}">
+  {{if eq (print .Mode) "failover"}}GitHub is down. What you add here is queued and replayed to GitHub when it's back.
+  {{else if eq (print .Mode) "normal"}}GitHub is up, so this is a read-only copy. Work on GitHub.
+  {{else}}GitHub is back and GitCove is replaying the outage's work to it. Work on GitHub.{{end}}
+  {{if .Age}}<span class="muted"> {{.Age}}.</span>{{end}}
+</div>
+{{end}}
+{{end}}
+
+{{define "foot"}}</body></html>{{end}}
+
+{{define "login"}}{{template "head" .}}
+<h1>Sign in</h1>
+<form method="post" action="/login">
+  <p><label>GitCove token<br><input type="text" name="token" autocomplete="off" required></label></p>
+  <button>Sign in</button>
+</form>
+<p class="muted">Your admin issues tokens with <code>cove token create</code>.</p>
+{{template "foot"}}{{end}}
+
+{{define "home"}}{{template "head" .}}
+<h1>Repositories</h1>
+<ul>{{range .Data}}<li><a href="/{{.}}/issues">{{.}}</a></li>{{else}}<li class="muted">No repositories assigned to your token.</li>{{end}}</ul>
+{{template "foot"}}{{end}}
+
+{{define "issues"}}{{template "head" .}}
+<h1>{{.Repo.FullName}}</h1>
+<p>
+  {{$s := .Data.State}}{{if eq $s "open"}}<strong>open</strong>{{else}}<a href="?state=open">open</a>{{end}}
+  {{if eq $s "closed"}}<strong>closed</strong>{{else}}<a href="?state=closed">closed</a>{{end}}
+  {{if eq $s "all"}}<strong>all</strong>{{else}}<a href="?state=all">all</a>{{end}}
+  {{if .Writable}} · <a href="/{{.Repo.FullName}}/issues/new">New issue</a>{{end}}
+</p>
+<table>
+{{range .Data.Rows}}
+  <tr>
+    <td class="muted">{{if .IsPR}}PR {{end}}{{.Num}}</td>
+    <td><a href="/{{$.Repo.FullName}}/issues/{{.Ref}}">{{.Title}}</a>
+      {{range .Labels}}<span class="badge">{{.}}</span>{{end}}{{if .Badge}}<span class="badge">{{.Badge}}</span>{{end}}</td>
+    <td class="muted">{{.State}}</td>
+  </tr>
+{{else}}
+  <tr><td class="muted">Nothing here.</td></tr>
+{{end}}
+</table>
+{{template "foot"}}{{end}}
+
+{{define "new"}}{{template "head" .}}
+<h1>New issue in {{.Repo.FullName}}</h1>
+<form method="post" action="/{{.Repo.FullName}}/issues">
+  <p><label>Title<br><input type="text" name="title" required maxlength="256"></label></p>
+  <p><label>Description<br><textarea name="body"></textarea></label></p>
+  {{if .Data}}<p>Labels: {{range .Data}}<label><input type="checkbox" name="label" value="{{.}}"> {{.}}</label> {{end}}</p>{{end}}
+  <button>Queue issue</button>
+  <p class="muted">It gets a temporary number such as L-3 until replay creates it on GitHub. Mention it elsewhere as #L-3 and replay rewrites that to the real number.</p>
+</form>
+{{template "foot"}}{{end}}
+
+{{define "issue"}}{{template "head" .}}{{with .Data}}
+<h1>{{.Title}} <span class="muted">{{if .Local}}{{.Ref}}{{else}}#{{.Ref}}{{end}}</span></h1>
+<p>
+  <span class="badge">{{.State}}</span>{{if .IsPR}}<span class="badge">pull request</span>{{end}}
+  {{range .Labels}}<span class="badge">{{.}}</span>{{end}}
+</p>
+{{if .Queued}}<p class="muted">Queued for GitHub: {{range $i, $q := .Queued}}{{if $i}}; {{end}}{{$q}}{{end}}.</p>{{end}}
+<div class="post"><div class="muted">{{.Author}} · {{.At}}</div><div class="text">{{.Body}}</div></div>
+{{range .Posts}}
+<div class="post"><div class="muted">{{.Author}} · {{.At}}{{if .Badge}}<span class="badge">{{.Badge}}</span>{{end}}</div><div class="text">{{.Body}}</div></div>
+{{end}}
+{{if $.Writable}}
+<form method="post" action="/{{$.Repo.FullName}}/issues/{{.Ref}}/comment">
+  <p><textarea name="body" required placeholder="Comment"></textarea></p>
+  <button>Queue comment</button>
+</form>
+<p>
+  <form class="inline" method="post" action="/{{$.Repo.FullName}}/issues/{{.Ref}}/state">
+    {{if eq .State "open"}}<input type="hidden" name="state" value="closed"><button>Close</button>
+    {{else}}<input type="hidden" name="state" value="open"><button>Reopen</button>{{end}}
+  </form>
+  {{range .Labels}}<form class="inline" method="post" action="/{{$.Repo.FullName}}/issues/{{$.Data.Ref}}/label">
+    <input type="hidden" name="op" value="remove"><input type="hidden" name="label" value="{{.}}"><button>− {{.}}</button></form>{{end}}
+  {{range .AddLabels}}<form class="inline" method="post" action="/{{$.Repo.FullName}}/issues/{{$.Data.Ref}}/label">
+    <input type="hidden" name="op" value="add"><input type="hidden" name="label" value="{{.}}"><button>+ {{.}}</button></form>{{end}}
+</p>
+{{if .EditableBody}}
+<details><summary>Edit title and description</summary>
+<form method="post" action="/{{$.Repo.FullName}}/issues/{{.Ref}}/edit">
+  <p><input type="text" name="title" value="{{.Title}}" required maxlength="256"></p>
+  <p><textarea name="body">{{.Body}}</textarea></p>
+  <button>Queue edit</button>
+  <p class="muted">If GitHub's version changes meanwhile, GitHub's is kept and yours is posted as a comment.</p>
+</form>
+</details>
+{{end}}
+{{end}}
+{{end}}{{template "foot"}}{{end}}

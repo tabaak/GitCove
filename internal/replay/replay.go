@@ -1,7 +1,8 @@
-// Package replay returns pushes made on GitCove during failover to GitHub (design 8.6 and 8.7):
-// never force-pushing (R1), never pushing to a default, deploy or protected branch (R4), and
-// safe to stop and resume at any point, because every decision is re-derived from the database
-// and the repos, and every state change is one transaction (R6).
+// Package replay returns work done on GitCove during failover to GitHub. Pushes (design 8.6 and
+// 8.7) never force-push (R1) and never go straight to a default, deploy or protected branch (R4).
+// Changes to issues (issues.go) are posted at most once (R3) and never overwrite newer content
+// (R5). Replay is safe to stop and resume at any point, because every decision is re-derived
+// from the database, the repos and GitHub, and every state change is one transaction (R6).
 package replay
 
 import (
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tabaak/gitcove/internal/auth"
 	"github.com/tabaak/gitcove/internal/ghclient"
 	"github.com/tabaak/gitcove/internal/gitstore"
 	"github.com/tabaak/gitcove/internal/mirror"
@@ -28,6 +30,9 @@ type Replayer struct {
 	Log    *slog.Logger
 	Alert  func(msg string)
 	Kill   func(point string) error // tests only: fail at a named point, as a crash would
+
+	Users      *auth.Users   // people's GitHub tokens; nil means the App posts everything
+	MarkerWait time.Duration // how long after a write its marker must show up in listings; 0 means 15s (spike M)
 
 	paused bool // alert once per pause, not once per pass
 }
@@ -313,7 +318,7 @@ func (r *Replayer) pass(ctx context.Context) error {
 			return fmt.Errorf("%s %s: %w", a.Repo.FullName(), a.Branch, err)
 		}
 	}
-	return nil
+	return r.replayIssues(ctx) // after the refs (design 8.5)
 }
 
 // Run calls Pass every interval until ctx ends.

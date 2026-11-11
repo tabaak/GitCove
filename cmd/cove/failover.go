@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -8,7 +9,9 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
+	"time"
 
+	"github.com/tabaak/gitcove/internal/ghclient"
 	"github.com/tabaak/gitcove/internal/replay"
 	"github.com/tabaak/gitcove/internal/store"
 )
@@ -160,6 +163,9 @@ func printPlan(ctx context.Context, a *app) error {
 		}
 		fmt.Println("\nGitHub is checked again before each push, so an action can still become a PR or a conflict, never the reverse.")
 	}
+	if err := printIssuePlan(ctx, a); err != nil {
+		return err
+	}
 	held, err := a.store.RefItems(ctx, 0, "conflict", "uncertain")
 	if err != nil {
 		return err
@@ -170,10 +176,70 @@ func printPlan(ctx context.Context, a *app) error {
 			fmt.Printf("  #%d %s %s, %s by %s: %s\n", it.ID, it.Repo, it.Branch, it.State, it.Pusher, it.Result)
 		}
 	}
+	heldIssues, err := a.store.MetaItems(ctx, 0, "conflict", "uncertain")
+	if err != nil {
+		return err
+	}
+	if len(heldIssues) > 0 {
+		fmt.Println("\nChanges to issues that need a human (`cove replay skip ID`, or `cove replay retry ID` to post again):")
+		for _, it := range heldIssues {
+			fmt.Printf("  #%d %s %s, %s by %s, %s: %s\n", it.ID, it.Repo, describe(it), it.Issue, it.Change.Author, it.State, it.Result)
+		}
+	}
 	if mode == store.Reconciling {
 		fmt.Println("\nApprove with: cove replay approve")
 	}
 	return nil
+}
+
+// printIssuePlan lists queued changes to issues in replay order, as whom each is posted, and
+// what waits for what (design 8.5), with the number of writes and how long the budget makes them take.
+func printIssuePlan(ctx context.Context, a *app) error {
+	steps, err := a.replay.IssuePlan(ctx)
+	if err != nil || len(steps) == 0 {
+		return err
+	}
+	toks, err := a.store.Tokens(ctx)
+	if err != nil {
+		return err
+	}
+	as := map[int64]string{}
+	for _, t := range toks {
+		as[t.ID] = t.GitHub
+	}
+	counts := map[string]int{}
+	for _, s := range steps {
+		counts[s.Kind]++
+	}
+	fmt.Printf("\nChanges to issues: %d new issues, %d comments, %d label changes, %d closes or reopens, %d edits.\n",
+		counts["issue"], counts["comment"], counts["label"], counts["state"], counts["edit"])
+	fmt.Printf("About %d writes to GitHub, taking at least %s at the write budget.\n", len(steps), ghclient.DefaultBudget.Estimate(len(steps)).Round(time.Second))
+	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(w, "ID\tREPO\tCHANGE\tON\tBY\tPOSTED AS\tSTATUS")
+	for _, s := range steps {
+		poster := cmp.Or(as[s.TokenID], "the App")
+		status := cmp.Or(s.Waits, "ready")
+		if s.State == "sending" {
+			status = "may have been sent: replay looks for it on GitHub before anything else"
+		}
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\t%s\n", s.ID, s.Repo, describe(s.Item), s.Issue, s.Change.Author, poster, status)
+	}
+	return w.Flush()
+}
+
+func describe(it store.Item) string {
+	c := it.Change
+	switch it.Kind {
+	case "issue":
+		return fmt.Sprintf("new issue %.40q", c.Title)
+	case "label":
+		return map[bool]string{true: "label +", false: "label -"}[c.Add] + c.Label
+	case "state":
+		return map[string]string{"open": "reopen", "closed": "close"}[c.State]
+	case "edit":
+		return "edit " + c.Field
+	}
+	return it.Kind
 }
 
 func repoArg(ctx context.Context, st *store.Store, full string) (store.Repo, error) {

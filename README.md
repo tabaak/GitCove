@@ -2,13 +2,13 @@
 
 A self-hosted mirror of a GitHub organisation that developers can keep working on while GitHub is down, and that replays their work to GitHub afterwards. The build plan is in [`plan.md`](plan.md).
 
-**Status: milestone 2 (code failover and replay).** GitCove mirrors every repo its GitHub App can see and serves clones and fetches to developers holding a GitCove token, including while GitHub is unreachable. During a failover that an admin starts, developers push branches to GitCove. Afterwards GitCove replays them to GitHub: it never force-pushes, and work for the default branch arrives only as a PR. Issues, comments and PRs on GitCove come in milestones 3 and 4.
+**Status: milestone 3 (issue and comment replay).** GitCove mirrors every repo its GitHub App can see, with its issues, PRs and comments, and serves them to developers holding a GitCove token, including while GitHub is unreachable. During a failover that an admin starts, developers push branches to GitCove, and in its web interface they comment, open issues, label, close, reopen and edit. Afterwards GitCove replays that work to GitHub. It never force-pushes, work for the default branch arrives only as a PR, nothing is posted twice, and nothing newer on GitHub is overwritten. Opening PRs, reviews and merging on GitCove come in milestone 4.
 
-GitCove keeps a second copy of your private code. Protect the server and its disk the way you protect anything that holds source code.
+GitCove keeps a second copy of your private code, issues and comments. Protect the server and its disk the way you protect anything that holds source code.
 
 ## Run it
 
-You need a GitHub App installed on the organisation, with **Contents: read and write**, **Pull requests: read and write** and **Metadata: read**, and its private key. Replay needs the write permissions: it pushes branches and opens PRs. Don't grant **Workflows**. Without it, GitHub refuses a pushed branch whose `.github/workflows` matches no current branch tip. GitCove checks this before pushing and sends such branches to the conflicts list (see below). A key that has Workflows could change CI and reach its secrets.
+You need a GitHub App installed on the organisation, with **Contents: read and write**, **Issues: read and write**, **Pull requests: read and write** and **Metadata: read**, and its private key. Replay needs the write permissions: it pushes branches, opens PRs, and posts issues and comments. Don't grant **Workflows**. Without it, GitHub refuses a pushed branch whose `.github/workflows` matches no current branch tip. GitCove checks this before pushing and sends such branches to the conflicts list (see below). A key that has Workflows could change CI and reach its secrets.
 
 ```sh
 docker build -t gitcove .
@@ -36,6 +36,9 @@ Put TLS in front of it, for example with Caddy. Developers send their token as a
 | `COVE_FETCH_TIMEOUT` | `10m` | Longest time a single repo fetch or replay push may take |
 | `COVE_REPLAY_INTERVAL` | `30s` | Time between replay passes while replaying |
 | `COVE_ALERT_WEBHOOK` | unset | URL that admin alerts are POSTed to as `{"text": ...}` (Slack-style). Alerts always go to the log too |
+| `COVE_APP_CLIENT_ID` | unset | The App's client ID. With the next two, lets people post their outage work under their own names (see below) |
+| `COVE_APP_CLIENT_SECRET_FILE` | unset | Path to a file holding the App's client secret |
+| `COVE_USER_KEY_FILE` | unset | Path to the key that encrypts people's GitHub tokens: 64 hex digits, e.g. from `openssl rand -hex 32`. Keep it off the data volume |
 | `COVE_GITHUB_API`, `COVE_GITHUB_GIT` | `https://api.github.com`, `https://github.com` | GitHub endpoints, overridden only in tests |
 
 ### Admin CLI
@@ -49,7 +52,7 @@ cove token list
 cove token revoke 3
 ```
 
-Tokens are stored only as SHA-256 hashes. An admin assigns each token's repos by hand, and a repo can be assigned only after its first sync. Token creation and revocation are written to the audit log. A token that can read a repo can also push to it during failover. There is no separate write permission yet, and permission sync from GitHub comes in milestone 7.
+Tokens are stored only as SHA-256 hashes. An admin assigns each token's repos by hand, and a repo can be assigned only after its first sync. Token creation and revocation are written to the audit log. A token that can read a repo can also push to it and change its issues during failover. There is no separate write permission yet, and permission sync from GitHub comes in milestone 7.
 
 ### Failover and replay
 
@@ -93,6 +96,29 @@ Pushes never use `--force`, so GitHub only ever fast-forwards. Each push can sta
 
 Replay can stop at any point and resume. The fallback branch name is stored before anything is sent. A restart looks up the PR from that branch before opening one, and GitHub refuses a second open PR with the same head and base. If GitHub fails during replay, replay pauses, raises an alert, and retries on each interval. `cove failover start` returns to failover. Finished items stay finished, and new pushes join the queue.
 
+### Issues and comments during failover
+
+GitCove's web interface is at its root URL. Sign in with your GitCove token. It shows each repo's issues and PRs with their comments as last synced, with a banner giving the mode and the age of the copy. During failover you can comment, open an issue, add or remove a label, close or reopen, and edit a title or description, on issues and PRs alike. Everything else is read-only. A new issue gets a temporary number such as `L-3`. Mention it elsewhere as `#L-3` and replay writes in the real number. Changes show on the page as queued until replay. Bodies are shown as plain text.
+
+**Replay** posts these after the pushes, in order: new issues, then comments, then labels and close or reopen, then edits. Something that mentions a new issue waits until that issue is on GitHub. If it never gets there (see below), what depends on it waits for an admin too, and `cove replay plan` says so.
+
+- Everything is posted by the App, starting "Originally by `ben` at 15:12 UTC during a GitHub outage", unless the person linked their GitHub account (below).
+- A label change applies just that label, never the whole set.
+- Replay reads the issue's current version from GitHub before a close, reopen or edit. If GitHub still has what GitCove showed, the change is applied. If GitHub already has the new value, nothing is done. If GitHub changed it to something else, GitHub's version stays and the proposal is posted as a comment. GitHub has no conditional update for issues, so a change landing in the instant between that read and the write can still be overwritten. It stays in GitHub's edit history.
+- Writes keep to a budget below GitHub's documented content limits: at least 1 second apart, at most 60 a minute and 450 an hour. On a rate limit, replay stops every request until GitHub allows them again. `cove replay plan` shows how long the queue takes at that pace.
+
+**Nothing is posted twice.** Each post carries a hidden marker (`<!-- gitcove:op=... -->`), and the item is marked as sending before the request. If the answer is lost, or GitCove restarts, replay looks for the marker with GitHub's filtered listings before doing anything else. It waits at least 15 seconds after sending and checks three times, because those listings lag behind writes. If the marker turns up, the item is done. If not, the item becomes **uncertain**, and replay never posts it again by itself, because GitHub may simply not be listing it yet. Check GitHub, then `cove replay skip ID` if it's there, or `cove replay retry ID` to post it again. What GitHub refuses, such as a comment on a deleted or locked issue, goes to the conflicts list with the text kept.
+
+#### Posting under people's own names (optional)
+
+With `COVE_APP_CLIENT_ID`, `COVE_APP_CLIENT_SECRET_FILE` and `COVE_USER_KEY_FILE` set, each developer can run `cove client authorise` while GitHub is up. Their replayed work then appears under their GitHub name, with the App's badge, and ends with the time it was written. In the App's settings, tick "Enable Device Flow" and keep "Expire user authorization tokens" on.
+
+- GitCove runs GitHub's device flow itself, so the tokens never reach the developer's machine. `cove token list` shows which tokens are linked to which GitHub account.
+- A person's token is used only for what they did on GitCove. Everyone else's work is posted by the App.
+- Tokens are encrypted with the key in `COVE_USER_KEY_FILE`. GitHub replaces the refresh token on every refresh, and GitCove saves the new one before using the access token it came with. Linking, refreshing and dropping a token are written to the audit log.
+- A token GitHub refuses, or one whose refresh token expired (after about six months), is dropped, and the App posts instead. Nothing waits for it.
+- **The risk:** anyone who gets the server and the key can act as those people, within the App's permissions, until they revoke the App in their GitHub settings. Revoking a GitCove token also deletes its GitHub token. Leave the three settings unset to keep everything posted by the App.
+
 ### For developers
 
 Once, while things are normal (Git needs a credential helper, such as `osxkeychain` or `libsecret`):
@@ -110,6 +136,8 @@ cove client off   # back to GitHub
 
 This only changes the `url.<gitcove>/my-org/.insteadOf` rule in your global Git config. Without the CLI, `git clone https://x:<token>@gitcove.example.com/my-org/api.git` works too. Any username works, and the token is the password.
 
+If your admin enabled it, run `cove client authorise` once while GitHub is up, so your comments and issues from an outage are posted under your own GitHub name. It prints a code to enter at github.com/login/device.
+
 ### Status
 
 `GET /status` is public and returns the mode, repo counts, the oldest sync time (the age of the copy), and whether GitHub's API and Git hosting answered the last probe. It shows no repo names or error text.
@@ -118,7 +146,7 @@ This only changes the `url.<gitcove>/my-org/.insteadOf` rule in your global Git 
 
 - Each repo is a bare repository named by its GitHub ID, so a rename keeps it.
 - A fetch writes only GitHub's copy of the refs, under `refs/gitcove/github/`. The refs developers see (`refs/heads`, `refs/tags`, `refs/pull`) are then moved to match in one atomic compare-and-swap update. Branches with queued or conflicted pushes are left alone. A fetch that fails or is cut off changes nothing, and the next cycle retries it.
-- Each sync also lists each repo's branches to record GitHub's `protected` flag.
+- Each sync also lists each repo's branches to record GitHub's `protected` flag, and syncs its issues, PRs, comments and labels. Issues and comments are listed oldest update first from a saved cursor, so the first sync of a big repo resumes where it stopped. An idle repo costs two 304 responses and a label listing per cycle. Deleted comments stay on GitCove until the weekly full scan of milestone 7.
 - Pushes go through a `pre-receive` hook (`cove hook pre-receive`) installed outside every repo. Clients can't write `refs/gitcove/`.
 - `refs/gitcove/` is hidden from clients' ref listings. Whether a client can still fetch a hidden commit by its ID is tested in milestone 7.
 - The installation token reaches `git` through the environment, never the command line.
@@ -127,7 +155,7 @@ This only changes the `url.<gitcove>/my-org/.insteadOf` rule in your global Git 
 ## Development
 
 ```sh
-go test ./...                                                        # includes both fault campaigns on 10 seeds
+go test ./...                                                        # includes the three fault campaigns on 10 seeds
 COVE_SEEDS=200 go test -race ./internal/mirror ./internal/replay     # the nightly campaigns
 ```
 
@@ -144,19 +172,30 @@ The replay campaign in `internal/replay` (`TestReplayCampaign`) runs failovers i
 
 Removing any of the safety rules (no force, the already-on-GitHub check, the PR-only rule, the PR lookup, held branches) makes it fail.
 
+The issue campaign in `internal/replay` (`TestIssueCampaign`) runs failovers in which two people, one with a linked GitHub account, open issues, comment, label, close, reopen and edit, mentioning new issues as `#L-n`, while GitHub changes the same issues. Then it replays with 500s, timeouts, lost responses, rate limits, listings that lag behind writes by up to three times the marker wait, GitCove killed before and after each write, and repeat outages. After each run it checks:
+
+- every change ended done, in conflicts or uncertain, or waits on one that did
+- nothing was posted twice, and every done post is on GitHub once
+- a value GitHub's side set was replaced only by a change made against exactly that value
+- posts appear under a person's name only for that person's changes, and otherwise carry the attribution line
+- a full sync agrees with GitHub
+
+Making replay resend after a restart, or apply edits without checking GitHub's version, makes it fail. `fakehub` also serves issues, comments and labels, the device flow, and user tokens whose refresh tokens rotate.
+
 CI runs gofmt, `go vet`, golangci-lint, the tests with `-race`, and a Docker build. A nightly run uses 200 seeds.
 
 ## Code layout
 
 ```
 cmd/cove/            server and admin CLI in one binary
-internal/ghclient/   GitHub API behind one interface: App JWT, installation tokens, ETags, rate limiter
+internal/ghclient/   GitHub API behind one interface: App JWT, installation tokens, ETags, rate limiter, write budget, device flow
 internal/gitstore/   bare repos, fetch, served refs, push, pre-receive hook, git http-backend
-internal/store/      SQLite in WAL mode, migrations, mode, outbox, tokens, audit log
-internal/mirror/     the sync loop (the plan's internal/sync), branch protection
-internal/replay/     replay plan, history comparison, pushes and fallback PRs
+internal/store/      SQLite in WAL mode, migrations, mode, outbox, mirrored issues, tokens, audit log
+internal/mirror/     the sync loop (the plan's internal/sync): refs, branch protection, issues and comments
+internal/replay/     replay plan, history comparison, pushes and fallback PRs, issue and comment replay
+internal/auth/       people's GitHub tokens: device flow, encryption, refresh
 internal/health/     API and Git probes
-internal/web/        HTTP: Git for developers, /status
+internal/web/        HTTP: Git for developers, the web interface, /status
 fakehub/             fault-injecting GitHub stand-in
 ```
 

@@ -95,3 +95,33 @@ func TestRetryAfterBlocksAllRequests(t *testing.T) {
 		t.Fatalf("blocked client still sent requests: %d calls", calls)
 	}
 }
+
+func TestBudget(t *testing.T) {
+	b := Budget{Gap: time.Second, PerMinute: 3, PerHour: 4}
+	t0 := time.Unix(1e9, 0)
+	at := func(secs ...int) []time.Time {
+		var out []time.Time
+		for _, s := range secs {
+			out = append(out, t0.Add(time.Duration(s)*time.Second))
+		}
+		return out
+	}
+	for _, c := range []struct {
+		hist []int
+		now  int
+		want int
+	}{
+		{nil, 0, 0},
+		{[]int{0}, 0, 1},                 // the gap
+		{[]int{0}, 5, 5},                 // gap already passed
+		{[]int{0, 1, 2}, 3, 60},          // fourth write in a minute waits for the first to age out
+		{[]int{0, 61, 62, 63}, 64, 3600}, // fifth in an hour waits an hour after the first
+	} {
+		if got := b.next(at(c.hist...), t0.Add(time.Duration(c.now)*time.Second)); !got.Equal(t0.Add(time.Duration(c.want) * time.Second)) {
+			t.Errorf("next(%v, %d) = %v, want +%ds", c.hist, c.now, got.Sub(t0), c.want)
+		}
+	}
+	if d := DefaultBudget.Estimate(2000); d < 4*time.Hour {
+		t.Errorf("2000 writes estimated at %v, want over 4 hours (design 8.9)", d)
+	}
+}

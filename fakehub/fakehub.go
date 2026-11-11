@@ -26,7 +26,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -42,12 +41,20 @@ var repoJSON []byte
 
 // Faults says how fakehub misbehaves. Rates are per request, between 0 and 1.
 type Faults struct {
-	APIDown, GitDown bool    // drop the connection on every API or Git request
-	ErrorRate        float64 // answer 500
-	TimeoutRate      float64 // hang until the client gives up
-	CutRate          float64 // cut a Git pack response off partway
-	LostRate         float64 // carry out a write (push or PR creation), then drop the connection unanswered
+	APIDown, GitDown bool          // drop the connection on every API or Git request
+	ErrorRate        float64       // answer 500
+	TimeoutRate      float64       // hang until the client gives up
+	CutRate          float64       // cut a Git pack response off partway
+	LostRate         float64       // carry out a write (a push or any API write), then drop the connection unanswered
+	RateLimitRate    float64       // refuse an API write with a secondary rate limit and Retry-After: 1
+	ListingLag       time.Duration // hide each issue or comment created through the API from listings for up to this long
 }
+
+// The App's OAuth client ID and secret, for the device flow and refreshing user tokens.
+const (
+	ClientID     = "Iv1.fakehub"
+	ClientSecret = "fakehub-secret"
+)
 
 // PR is a pull request created through the API.
 type PR struct {
@@ -67,7 +74,8 @@ type Hub struct {
 	Key   *rsa.PrivateKey // the App's private key, for the client under test
 	Root  string          // bare repos at Root/<org>/<name>.git
 
-	NotModified atomic.Int64 // 304 responses sent
+	NotModified atomic.Int64  // 304 responses sent
+	AccessTTL   time.Duration // lifetime of user access tokens, default 8 hours
 
 	mu        sync.Mutex
 	rng       *mrand.Rand
@@ -76,7 +84,12 @@ type Hub struct {
 	remaining int
 	git       string
 	hooks     string
-	prs       map[string][]PR // by repo name
+
+	metas       map[string]*meta // issues, PRs, comments and labels by repo name
+	nextComment int64
+	devices     map[string]*device   // by device code
+	userTokens  map[string]userToken // access token -> user
+	refresh     map[string]string    // refresh token -> login
 }
 
 // New starts a fakehub whose faults are drawn from seed. It shuts down when the test ends.
@@ -90,7 +103,8 @@ func New(t testing.TB, seed uint64) *Hub {
 		t.Fatal(err)
 	}
 	h := &Hub{Org: "fakeorg", AppID: "1", Key: key, Root: t.TempDir(), git: git, hooks: t.TempDir(),
-		rng: mrand.New(mrand.NewPCG(seed, seed)), tokens: map[string]time.Time{}, remaining: 5000, prs: map[string][]PR{}}
+		rng: mrand.New(mrand.NewPCG(seed, seed)), tokens: map[string]time.Time{}, remaining: 5000,
+		metas: map[string]*meta{}, devices: map[string]*device{}, userTokens: map[string]userToken{}, refresh: map[string]string{}}
 	for name, body := range map[string]string{"pre-receive": preReceive, "post-receive": "#!/bin/sh\ncat >> pushlog\n"} {
 		if err := os.WriteFile(filepath.Join(h.hooks, name), []byte(body), 0o700); err != nil {
 			t.Fatal(err)
@@ -104,6 +118,20 @@ func New(t testing.TB, seed uint64) *Hub {
 	mux.HandleFunc("GET /repos/{org}/{repo}/branches", h.inst(h.repo(h.branches)))
 	mux.HandleFunc("GET /repos/{org}/{repo}/pulls", h.inst(h.repo(h.listPRs)))
 	mux.HandleFunc("POST /repos/{org}/{repo}/pulls", h.inst(h.repo(h.createPR)))
+	mux.HandleFunc("GET /repos/{org}/{repo}/issues", h.inst(h.repo(h.listIssues)))
+	mux.HandleFunc("POST /repos/{org}/{repo}/issues", h.inst(h.repo(h.createIssue)))
+	mux.HandleFunc("GET /repos/{org}/{repo}/issues/comments", h.inst(h.repo(h.listComments)))
+	mux.HandleFunc("GET /repos/{org}/{repo}/issues/{n}", h.inst(h.repo(h.getIssue)))
+	mux.HandleFunc("PATCH /repos/{org}/{repo}/issues/{n}", h.inst(h.repo(h.editIssue)))
+	mux.HandleFunc("GET /repos/{org}/{repo}/issues/{n}/comments", h.inst(h.repo(h.listComments)))
+	mux.HandleFunc("POST /repos/{org}/{repo}/issues/{n}/comments", h.inst(h.repo(h.createComment)))
+	mux.HandleFunc("POST /repos/{org}/{repo}/issues/{n}/labels", h.inst(h.repo(h.addLabels)))
+	mux.HandleFunc("DELETE /repos/{org}/{repo}/issues/{n}/labels/{label}", h.inst(h.repo(h.removeLabel)))
+	mux.HandleFunc("GET /repos/{org}/{repo}/labels", h.inst(h.repo(h.repoLabels)))
+	mux.HandleFunc("GET /app", h.app(h.appInfo))
+	mux.HandleFunc("GET /user", h.inst(h.user))
+	mux.HandleFunc("POST /login/device/code", h.deviceCode)
+	mux.HandleFunc("POST /login/oauth/access_token", h.oauthToken)
 	mux.HandleFunc("/{org}/{repo}/{rest...}", h.serveGit)
 	h.Server = httptest.NewServer(h.withFaults(mux))
 	t.Cleanup(func() { h.CloseClientConnections(); h.Close() }) // hung timeout-fault requests would block Close
@@ -116,7 +144,7 @@ func (h *Hub) withFaults(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		isGit := strings.Contains(r.URL.Path, ".git/")
 		h.mu.Lock()
-		f, roll, cut := h.faults, h.rng.Float64(), h.rng.Float64()
+		f, roll, cut, limited := h.faults, h.rng.Float64(), h.rng.Float64(), h.rng.Float64()
 		cutAt := 64 + h.rng.IntN(4096)
 		h.mu.Unlock()
 		switch {
@@ -137,7 +165,13 @@ func (h *Hub) withFaults(next http.Handler) http.Handler {
 		if isGit && r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/git-upload-pack") && cut < f.CutRate {
 			w = &cutWriter{w, cutAt}
 		}
-		write := r.Method == "POST" && (strings.HasSuffix(r.URL.Path, "/git-receive-pack") || strings.HasSuffix(r.URL.Path, "/pulls"))
+		apiWrite := !isGit && r.Method != "GET" && strings.HasPrefix(r.URL.Path, "/repos/")
+		if apiWrite && limited < f.RateLimitRate {
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, `{"message":"You have exceeded a secondary rate limit. Please wait a few minutes before you try again."}`, http.StatusForbidden)
+			return
+		}
+		write := apiWrite || r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/git-receive-pack")
 		if write && cut < f.LostRate {
 			next.ServeHTTP(httptest.NewRecorder(), r) // done, but the answer never arrives
 			if conn, _, err := w.(http.Hijacker).Hijack(); err == nil {
@@ -189,10 +223,10 @@ func (h *Hub) app(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// inst requires a live installation token.
+// inst requires a live installation token or user token.
 func (h *Hub) inst(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !h.validToken(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")) {
+		if h.actor(r) == "" {
 			h.json(w, r, http.StatusUnauthorized, map[string]any{"message": "Bad credentials"})
 			return
 		}
@@ -355,9 +389,9 @@ func (h *Hub) branches(w http.ResponseWriter, r *http.Request) {
 	h.json(w, r, http.StatusOK, list)
 }
 
-func prJSON(pr PR) map[string]any {
-	return map[string]any{"number": pr.Number, "state": pr.State, "title": pr.Title, "body": pr.Body,
-		"head": map[string]any{"ref": pr.Head}, "base": map[string]any{"ref": pr.Base}}
+func prJSON(i *Issue) map[string]any {
+	return map[string]any{"number": i.Number, "state": i.State, "title": i.Title, "body": i.Body,
+		"head": map[string]any{"ref": i.Head}, "base": map[string]any{"ref": i.Base}}
 }
 
 func (h *Hub) listPRs(w http.ResponseWriter, r *http.Request) {
@@ -366,8 +400,8 @@ func (h *Hub) listPRs(w http.ResponseWriter, r *http.Request) {
 	state := cmp.Or(q.Get("state"), "open")
 	h.mu.Lock()
 	list := []map[string]any{}
-	for _, pr := range h.prs[r.PathValue("repo")] {
-		if (head == "" || pr.Head == head) && (state == "all" || pr.State == state) {
+	for _, pr := range h.meta(r.PathValue("repo")).issues {
+		if pr.PR && (head == "" || pr.Head == head) && (state == "all" || pr.State == state) {
 			list = append(list, prJSON(pr))
 		}
 	}
@@ -402,25 +436,36 @@ func (h *Hub) createPR(w http.ResponseWriter, r *http.Request) {
 		fail("No commits between " + in.Base + " and " + in.Head)
 		return
 	}
+	author := h.actor(r)
 	h.mu.Lock()
-	for _, pr := range h.prs[name] {
-		if pr.State == "open" && pr.Head == in.Head && pr.Base == in.Base {
+	m := h.meta(name)
+	for _, pr := range m.issues {
+		if pr.PR && pr.State == "open" && pr.Head == in.Head && pr.Base == in.Base {
 			h.mu.Unlock()
 			fail(fmt.Sprintf("A pull request already exists for %s:%s.", h.Org, in.Head))
 			return
 		}
 	}
-	pr := PR{Number: 100 + len(h.prs[name]), Head: in.Head, Base: in.Base, Title: in.Title, Body: in.Body, State: "open"}
-	h.prs[name] = append(h.prs[name], pr)
+	t := now()
+	pr := &Issue{Number: len(m.issues) + 1, PR: true, Head: in.Head, Base: in.Base, Title: in.Title, Body: in.Body, FirstBody: in.Body, State: "open",
+		Author: author, Created: t, Updated: t, visible: h.lag()}
+	m.issues = append(m.issues, pr)
+	out := prJSON(pr)
 	h.mu.Unlock()
-	h.json(w, r, http.StatusCreated, prJSON(pr))
+	h.json(w, r, http.StatusCreated, out)
 }
 
 // PRs returns the PRs created in repo name.
 func (h *Hub) PRs(name string) []PR {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return slices.Clone(h.prs[name])
+	var out []PR
+	for _, i := range h.meta(name).issues {
+		if i.PR {
+			out = append(out, PR{Number: i.Number, Head: i.Head, Base: i.Base, Title: i.Title, Body: i.Body, State: i.State})
+		}
+	}
+	return out
 }
 
 // Protect makes pushes to branch in repo name fail as GitHub's branch protection would, and

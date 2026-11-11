@@ -264,15 +264,20 @@ func (s *Store) RecordPush(ctx context.Context, repoID int64, pusher string, upd
 		}
 		for _, u := range updates {
 			payload, _ := json.Marshal(refPayload{u.Branch, u.New, pusher})
-			b := make([]byte, 16)
-			rand.Read(b)
 			if _, err := tx.Exec("INSERT INTO outbox (op_id, repo_id, kind, base_version, payload) VALUES (?, ?, 'ref', ?, ?)",
-				hex.EncodeToString(b), repoID, u.Old, payload); err != nil {
+				opID(), repoID, u.Old, payload); err != nil {
 				return err
 			}
 		}
 		return nil
 	})
+}
+
+// opID is an outbox item's operation ID, the marker replay puts in what it posts (design 8.4).
+func opID() string {
+	b := make([]byte, 16)
+	rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 // HeldBranches lists the repo's branches with unreplayed or unresolved pushes. Their served refs
@@ -331,17 +336,17 @@ func (s *Store) MarkSending(ctx context.Context, ids []int64, target string) err
 	})
 }
 
-// Finish ends pending or sending items as done or conflict. A conflict also gets a conflicts
-// row per item with both versions (the commit on GitCove and GitHub's tip).
+// Finish ends pending or sending items as done, conflict or uncertain. A conflict or uncertain
+// item also gets a conflicts row with both versions (e.g. the commit on GitCove and GitHub's tip).
 func (s *Store) Finish(ctx context.Context, ids []int64, state, result, local, github string) error {
-	if state != "done" && state != "conflict" {
+	if state != "done" && state != "conflict" && state != "uncertain" {
 		return fmt.Errorf("finish: bad state %q", state)
 	}
 	return s.tx(ctx, func(tx *sql.Tx) error {
 		if err := updateItems(tx, ids, "state = ?, result = ?", state, result); err != nil {
 			return err
 		}
-		if state == "conflict" {
+		if state != "done" {
 			for _, id := range ids {
 				if _, err := tx.Exec("INSERT INTO conflicts (outbox_id, reason, local_version, github_version) VALUES (?, ?, ?, ?)",
 					id, result, local, github); err != nil {

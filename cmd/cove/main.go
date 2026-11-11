@@ -19,6 +19,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/tabaak/gitcove/internal/auth"
 	"github.com/tabaak/gitcove/internal/ghclient"
 	"github.com/tabaak/gitcove/internal/gitstore"
 	"github.com/tabaak/gitcove/internal/health"
@@ -30,7 +31,7 @@ import (
 
 const usage = `usage: cove <command>
 
-  serve                                    run the server: sync, health checks, replay, Git over HTTP, /status
+  serve                                    run the server: sync, health checks, replay, Git over HTTP, web interface, /status
   sync                                     mirror every repo once and exit
   token create -name NAME -repo OWNER/REPO [-repo ...]
                                            issue a token; its secret is printed once
@@ -40,9 +41,9 @@ const usage = `usage: cove <command>
   failover start                           accept pushes while GitHub is down
   failover allow-protected on|off          allow direct pushes to protected branches, for this failover only
   failover end                             refuse pushes again, catch up with GitHub and show the replay plan
-  replay plan                              dry run: what replay would push, and what needs a human
+  replay plan                              dry run: what replay would push and post, and what needs a human
   replay approve                           let the server replay the plan
-  replay skip ID | replay retry ID         settle a conflict: drop it, or queue it again
+  replay skip ID | replay retry ID         settle a conflict or uncertain item: drop it, or queue it again
   branch list
   branch mark|unmark OWNER/REPO BRANCH protected|deploy
                                            extra protected branches; deploy branches reach GitHub only through a PR
@@ -50,6 +51,7 @@ const usage = `usage: cove <command>
 
   client setup -url URL -org ORG           on a developer machine: save GitCove's address and token (COVE_TOKEN or stdin)
   client on | client off                   send Git for the organisation to GitCove, or back to GitHub
+  client authorise                         while GitHub is up: let GitCove post your outage work under your GitHub name
 
 Configuration comes from COVE_* environment variables (see README.md).
 `
@@ -104,6 +106,8 @@ func run(args []string) error {
 type config struct {
 	Data, Listen, TLSCert, TLSKey     string
 	API, GitURL, Org, AppID, KeyFile  string
+	ClientID, ClientSecretFile        string
+	UserKeyFile                       string
 	AlertWebhook                      string
 	SyncEvery, HealthEvery, FetchTime time.Duration
 	ReplayEvery                       time.Duration
@@ -120,6 +124,10 @@ func loadConfig() (config, error) {
 		Org:     os.Getenv("COVE_ORG"),
 		AppID:   os.Getenv("COVE_APP_ID"),
 		KeyFile: os.Getenv("COVE_APP_KEY_FILE"),
+
+		ClientID:         os.Getenv("COVE_APP_CLIENT_ID"),
+		ClientSecretFile: os.Getenv("COVE_APP_CLIENT_SECRET_FILE"),
+		UserKeyFile:      os.Getenv("COVE_USER_KEY_FILE"),
 
 		AlertWebhook: os.Getenv("COVE_ALERT_WEBHOOK"),
 	}
@@ -153,6 +161,7 @@ type app struct {
 	git    *gitstore.Store
 	mirror *mirror.Mirror
 	replay *replay.Replayer
+	users  *auth.Users
 	health *health.Checker
 	log    *slog.Logger
 }
@@ -186,16 +195,55 @@ func build(cfg config) (*app, error) {
 		return nil, err
 	}
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
-	gh := &ghclient.App{API: cfg.API, AppID: cfg.AppID, Key: key, Org: cfg.Org, HTTP: &http.Client{Timeout: time.Minute}}
+	gh := &ghclient.App{API: cfg.API, AppID: cfg.AppID, Key: key, Org: cfg.Org, HTTP: &http.Client{Timeout: time.Minute}, Web: cfg.GitURL}
+	users, err := userTokens(cfg, gh, st, log)
+	if err != nil {
+		st.Close()
+		return nil, err
+	}
 	m := &mirror.Mirror{GH: gh, Store: st, Git: gs, FetchTimeout: cfg.FetchTime, Log: log}
 	return &app{
 		store:  st,
 		git:    gs,
 		mirror: m,
-		replay: &replay.Replayer{GH: gh, Store: st, Git: gs, Mirror: m, Log: log, Alert: alerter(cfg.AlertWebhook, log)},
+		users:  users,
+		replay: &replay.Replayer{GH: gh, Store: st, Git: gs, Mirror: m, Log: log, Alert: alerter(cfg.AlertWebhook, log), Users: users},
 		health: &health.Checker{GH: gh, HTTP: &http.Client{Timeout: 10 * time.Second}, GitURL: gs.GitURL, Store: st, Log: log},
 		log:    log,
 	}, nil
+}
+
+// userTokens sets up keeping people's GitHub tokens (decision D3) if all three settings are
+// given, and returns nil, so the App posts everything, if none are.
+func userTokens(cfg config, gh *ghclient.App, st *store.Store, log *slog.Logger) (*auth.Users, error) {
+	switch n := btoi(cfg.ClientID != "") + btoi(cfg.ClientSecretFile != "") + btoi(cfg.UserKeyFile != ""); n {
+	case 0:
+		return nil, nil
+	case 3:
+	default:
+		return nil, errors.New("COVE_APP_CLIENT_ID, COVE_APP_CLIENT_SECRET_FILE and COVE_USER_KEY_FILE go together: set all three, or none")
+	}
+	secret, err := os.ReadFile(cfg.ClientSecretFile)
+	if err != nil {
+		return nil, err
+	}
+	key, err := os.ReadFile(cfg.UserKeyFile)
+	if err != nil {
+		return nil, err
+	}
+	gh.ClientID, gh.ClientSecret = cfg.ClientID, strings.TrimSpace(string(secret))
+	u, err := auth.New(gh, st, log, key)
+	if err != nil {
+		return nil, fmt.Errorf("COVE_USER_KEY_FILE: %w", err)
+	}
+	return u, nil
+}
+
+func btoi(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // alerter tells the admin: always in the log, and also by POSTing {"text": msg} to webhook if set
@@ -230,7 +278,7 @@ func serve(cfg config) error {
 	go a.health.Run(ctx, cfg.HealthEvery, 15*time.Second)
 
 	// No write timeout: clones of large repos can take a long time.
-	srv := &http.Server{Addr: cfg.Listen, Handler: (&web.Server{Store: a.store, Git: a.git, Health: a.health, Log: a.log}).Handler(),
+	srv := &http.Server{Addr: cfg.Listen, Handler: (&web.Server{Store: a.store, Git: a.git, Health: a.health, Users: a.users, Log: a.log}).Handler(),
 		ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -292,9 +340,9 @@ func tokenCmd(cfg config, args []string) error {
 			return err
 		}
 		w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(w, "ID\tNAME\tCREATED\tREVOKED\tREPOS")
+		fmt.Fprintln(w, "ID\tNAME\tCREATED\tREVOKED\tGITHUB\tREPOS")
 		for _, t := range toks {
-			fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n", t.ID, t.Name, t.CreatedAt, t.RevokedAt, strings.Join(t.Repos, ","))
+			fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\n", t.ID, t.Name, t.CreatedAt, t.RevokedAt, t.GitHub, strings.Join(t.Repos, ","))
 		}
 		return w.Flush()
 	case "revoke":

@@ -1,4 +1,5 @@
-// Package web is GitCove's HTTP front: Git over HTTP for developers and the /status endpoint.
+// Package web is GitCove's HTTP front: Git over HTTP for developers, the web interface (ui.go),
+// and the /status endpoint.
 package web
 
 import (
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/tabaak/gitcove/internal/auth"
 	"github.com/tabaak/gitcove/internal/gitstore"
 	"github.com/tabaak/gitcove/internal/health"
 	"github.com/tabaak/gitcove/internal/store"
@@ -18,12 +20,23 @@ type Server struct {
 	Store  *store.Store
 	Git    *gitstore.Store
 	Health *health.Checker
+	Users  *auth.Users // nil if GitCove doesn't keep GitHub user tokens
 	Log    *slog.Logger
 }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /status", s.status)
+	mux.HandleFunc("GET /login", s.loginForm)
+	mux.HandleFunc("POST /login", s.login)
+	mux.HandleFunc("POST /logout", s.logout)
+	mux.HandleFunc("POST /api/authorise", s.authorise)
+	mux.HandleFunc("GET /{$}", s.ui(s.home))
+	mux.HandleFunc("GET /{owner}/{repo}/issues", s.ui(s.issues))
+	mux.HandleFunc("GET /{owner}/{repo}/issues/new", s.ui(s.newIssueForm))
+	mux.HandleFunc("POST /{owner}/{repo}/issues", s.ui(s.createIssue))
+	mux.HandleFunc("GET /{owner}/{repo}/issues/{ref}", s.ui(s.issue))
+	mux.HandleFunc("POST /{owner}/{repo}/issues/{ref}/{action}", s.ui(s.act))
 	mux.HandleFunc("/{owner}/{repo}/{rest...}", s.git)
 	return mux
 }

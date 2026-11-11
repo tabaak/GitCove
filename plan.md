@@ -67,12 +67,12 @@ internal/ghclient/   GitHub API behind one interface
 internal/gitstore/   bare repos, refs, hooks, http-backend
 internal/store/      SQLite, migrations
 internal/mirror/     sync loop: backfill, polling, webhooks (not `sync`, which shadows the standard library)
-internal/outbox/     item life-cycle, marker, ordering
+internal/outbox/     not built: the item life-cycle lives in internal/store, and marker and ordering in internal/replay
 internal/replay/     plan, comparison, writer, rate budget
 internal/health/     probes and mode decisions
 internal/agent/      developer-machine agent
 internal/web/        server-rendered interface
-internal/auth/       user tokens (milestone 3); GitCove tokens live in internal/store
+internal/auth/       users' GitHub tokens: device flow, encryption, refresh; GitCove tokens live in internal/store
 fakehub/             fault-injecting GitHub stand-in
 ```
 
@@ -143,19 +143,19 @@ Tasks:
 
 Tasks:
 
-- [ ] Metadata schema: `issues`, `pull_requests`, `comments`, `reviews`, `labels`.
-- [ ] Backfill and polling sync with saved cursors and the fixed-`since` or stable-first-page ETag approach (section 7).
-- [ ] Server-rendered web interface to browse repos, issues, PRs, comments and reviews, with a mode banner and the age of the copy.
-- [ ] Web writes: comment, new issue with a temporary ID (`L-n`), labels, close and reopen, and edits.
-- [ ] Metadata outbox with the hidden marker, the full life-cycle (`pending`, `sending`, `done`, `conflict`, `uncertain`), and marker lookup by filtered listing per spike M, waiting at least 15 s after `sending` and rechecking twice before an issue counts as unsent.
-- [ ] Rate-limited writer: at least 1 second between writes, 60 per minute, 450 per rolling hour, a client-side write count, stop the queue on a block, and refresh installation tokens.
-- [ ] Replay ordering and dependencies (section 8.5): refs, issues, comments, labels and state, then edits. Rewrite `#L-n` references. Dependants wait on `conflict` or `uncertain` items.
-- [ ] Conflict rules (section 8.6): per-change labels, GitHub's state kept on close or reopen conflicts, GitHub's text kept on edit conflicts with the proposal posted as a comment.
-- [ ] Authorship: App attribution line by default. If decision D3 is yes, `client authorise` through device flow, encrypted refresh-token storage with the rotated token saved in the same transaction as the refresh, and fallback to the App.
-- [ ] Basic plan screen: counts, request estimate, and the `conflicts` and `uncertain` lists.
-- [ ] `fakehub`: issue and comment endpoints with listing lag, lost responses, rate limits, and out-of-order webhooks.
+- [x] Metadata schema: `issues`, `pull_requests`, `comments`, `reviews`, `labels`. *Changed: `issues`, `comments` and `labels` only. GitHub's issues listing returns PRs too, so PRs are mirrored as issues (`is_pr`) with their conversation comments, and comments, labels, close and reopen, and edits already work on them. Reviews are only read and written in milestone 4, so the `pull_requests`, `reviews` and `review_threads` tables move there.*
+- [x] Backfill and polling sync with saved cursors and the fixed-`since` or stable-first-page ETag approach (section 7). *Fixed `since`: issues and comments are listed oldest update first, and the cursor is saved with each page, so a backfill resumes. `since` is the cursor minus a minute, because listings lag behind writes (spike M), so an item updated just before the newest one seen can be listed after it. It changes only when the cursor does, so an idle repo costs two 304s and a label listing per cycle. Untested against GitHub. Deleted comments and issues stay until the weekly scan (milestone 7).*
+- [x] Server-rendered web interface to browse repos, issues, PRs, comments and reviews, with a mode banner and the age of the copy. *Reviews move to milestone 4 with their mirror. Bodies are shown as escaped plain text, not rendered Markdown: safe without a sanitiser, and no new dependency. Sign-in is the GitCove token, kept in an HttpOnly, SameSite=Strict cookie, and cross-site posts are refused.*
+- [x] Web writes: comment, new issue with a temporary ID (`L-n`), labels, close and reopen, and edits. *Edits are of title and description, as in section 8.6; comments can't be edited. A new issue's title and description are edited in place until replay starts on it. Labels are limited to the repo's synced labels, so replay never creates one.*
+- [x] Metadata outbox with the hidden marker, the full life-cycle (`pending`, `sending`, `done`, `conflict`, `uncertain`), and marker lookup by filtered listing per spike M, waiting at least 15 s after `sending` and rechecking twice before an issue counts as unsent. *Changed: a `sending` text item whose marker is still missing after the wait and two rechecks goes to `uncertain`, and is never sent again by itself, also after a crash. A crash before the request went out (case 2) can't be told apart from a listing that lags (case 6), and resending in case 6 is a duplicate, which the exit criterion rules out. The cost is that a crash in that moment leaves an item for a human. The same wait applies to comments. What GitHub refuses (4xx) ends in `conflict`; a rate limit sends the item back to `pending`. Labels, state and edits carry no marker: they are decided again from GitHub's current version after a crash.*
+- [x] Rate-limited writer: at least 1 second between writes, 60 per minute, 450 per rolling hour, a client-side write count, stop the queue on a block, and refresh installation tokens. *Covers fallback PR creation too. The count is in memory, so a restart forgets the last hour (a `shortcut:` comment in the code). The budget is set in code, not by environment.*
+- [x] Replay ordering and dependencies (section 8.5): refs, issues, comments, labels and state, then edits. Rewrite `#L-n` references. Dependants wait on `conflict` or `uncertain` items. *A new issue never waits for another new issue: two that mention each other would wait forever, so a mention of one not yet on GitHub stays as written. Everything else waits as specified, and the plan says what for. The instance stays in Replaying while something waits, until an admin skips or retries.*
+- [x] Conflict rules (section 8.6): per-change labels, GitHub's state kept on close or reopen conflicts, GitHub's text kept on edit conflicts with the proposal posted as a comment. *"GitHub also changed" is judged by value: replay reads the issue's current version, applies a change only if GitHub still has the value it was made against, does nothing if GitHub already has the new value, and otherwise posts a note. A state has two values, so a note for close or reopen appears only when the change asked for the state GitCove showed and GitHub moved away from it, and a close then reopen on GitHub during the outage counts as unchanged. GitHub has no conditional update for issues, so a change landing in the milliseconds between replay's read and its write can still be overwritten. It stays in GitHub's edit history.*
+- [x] Authorship: App attribution line by default. If decision D3 is yes, `client authorise` through device flow, encrypted refresh-token storage with the rotated token saved in the same transaction as the refresh, and fallback to the App. *D3 is yes (decided 8 Nov). `cove client authorise` asks GitCove, which runs the device flow itself, so the tokens never reach the developer's machine. They are encrypted with AES-256-GCM under a key in `COVE_USER_KEY_FILE`. The refresh is an HTTP call, so "the same transaction" means the rotated token is saved straight after it, before the access token is used. A token GitHub refuses is dropped and audited, and the App posts instead. A person's token also posts their labels, closes and edits. Text posted as the person ends with the original time, since GitHub can't set it.*
+- [x] Basic plan screen: counts, request estimate, and the `conflicts` and `uncertain` lists. *In `cove replay plan`: counts by kind, the number of writes and the time the budget needs, each item's poster and what it waits for, and both lists. There's no web plan page.*
+- [x] `fakehub`: issue and comment endpoints with listing lag, lost responses, rate limits, and out-of-order webhooks. *Changed: no webhook faults, because webhooks come in milestone 7 and sync is polling only (section 12 updated). Also added: labels, the App's identity, the device flow and user tokens with rotating refresh tokens, lost responses for every API write, and a shared number sequence for issues and PRs.*
 
-**Exit:** a fault campaign on comments and issues passes all applicable checks, including a created item that doesn't show up in listings for a while. Case 6 in section 8.3 ends in `uncertain`, never a repost.
+**Exit:** a fault campaign on comments and issues passes all applicable checks, including a created item that doesn't show up in listings for a while. Case 6 in section 8.3 ends in `uncertain`, never a repost. *Met in `fakehub`: `TestIssueCampaign` (10 seeds per CI run, 200 nightly; 200 pass locally with `-race`) has two people, one with an authorised GitHub account, change issues while GitHub changes the same ones, then replays under 500s, timeouts, lost responses, rate limits, listings lagging up to three times the marker wait, kills and repeat outages. It checks R2, R3, R5 and R7 and that a full sync agrees (check 3 is about refs and doesn't apply). `TestCase6Uncertain` covers case 6 directly. Making replay resend after a restart, or apply edits without the base check, makes the campaign fail. `TestFailoverEndToEnd` covers the real binary from `client authorise` to an issue posted under the person's name. Not yet run against the sandbox organisation.*
 
 ## 8. Milestone 4: PRs, reviews and local merging
 
@@ -164,8 +164,9 @@ Tasks:
 Tasks:
 
 - [ ] Create PRs on GitCove from the web interface and CLI, with `L-` references and "Fixes" keywords rewritten on replay.
-- [ ] PR metadata on GitCove and in replay: edits, close and reopen, draft or ready, labels, assignees and base branch, using the conflict rules in section 8.6.
-- [ ] Reviews: summary, verdict, and line comments stored with commit, path, line and side. Replies to line comments and resolved conversations stored on `review_threads`.
+- [ ] PR metadata on GitCove and in replay: edits, close and reopen, draft or ready, labels, assignees and base branch, using the conflict rules in section 8.6. *Edits, close and reopen, and labels already work on PRs through the issues API since milestone 3.*
+- [ ] Reviews: summary, verdict, and line comments stored with commit, path, line and side. Replies to line comments and resolved conversations stored on `review_threads`. *Also the `pull_requests`, `reviews` and `review_threads` mirror and showing reviews in the interface, moved from milestone 3.*
+- [ ] PR diff view: what the PR's branch changes against its base (files, then a per-file diff), which reviews and line comments need. A read-only branch list per repo (name, last commit, "compare with" the default branch) leads to it. *Added after the 11 Nov sandbox test: the web interface had no way to see branches. No general branch switcher or file browser: developers have the code locally; add one only if people ask after a real outage.*
 - [ ] Local approvals with a per-repo count (decision D4) and approver other than the author. Local merge into the target branch, as a merge commit only (decision D5). A local merge is the only way to change a protected branch.
 - [ ] Local merge conflicts: refuse cleanly, leave nothing half-merged, and reset approvals when the head commit changes.
 - [ ] Linked issues: close them locally when a PR with a closing keyword is merged, without replaying that close as its own item. Milestone 0 confirmed GitHub closes them when the replayed PR is merged.
@@ -236,7 +237,7 @@ Tasks:
 |---|---|---|---|
 | D1 | Name: GitCove; CLI command: `cove` | Decided | GitCove / `cove` |
 | D2 | Licence: Apache 2.0 | Decided | Apache 2.0 |
-| D3 | Whether to store users' refresh tokens so reviews appear under their names | Start of milestone 3 | No, App-only. Section 8.12 and the real approvals in 8.13 are dropped |
+| D3 | Whether to store users' refresh tokens so reviews appear under their names | Decided (8 Nov): yes, opt-in per person | No, App-only. Section 8.12 and the real approvals in 8.13 are dropped |
 | D4 | Default approvals needed for a local merge | Start of milestone 4 | 1, and not the author |
 | D5 | Whether local merges may also be squash or rebase. They would break commit-bound approvals | Start of milestone 4 | No. Merge commits only |
 | D6 | Automatic failover defaults (duration, cooldown, degraded thresholds) | Start of milestone 5 | 10 minutes, with other values set by testing |
@@ -248,10 +249,10 @@ Tasks:
 |---|---|
 | 1 | GitHub fully down, partly down (API up and Git down, or the reverse), HTTP 500s, timeouts |
 | 2 | Kill GitCove at random points, repeat outages, force-pushes and deleted branches on GitHub, developers pushing the same commits first, divergent branches, branch protection refusing a push |
-| 3 | Rate-limit responses, a created item missing from listings for a while, lost responses, dropped, repeated and out-of-order webhooks, the same item edited on both sides |
+| 3 | Rate-limit responses, a created item missing from listings for a while, lost responses, the same item edited on both sides. *Webhook faults moved to milestone 7 with webhooks* |
 | 4 | Local merges while `main` moves, merge conflicts on a local merge, expired or revoked user tokens, approvals for a commit that changed, line comments on a commit that never reached GitHub, a parent comment deleted before a reply replays, a conversation resolved or given new comments on GitHub during replay, a PR closed on GitHub without merging |
 | 5 | Sustained error rates of 1 to 40%, installation-token failures, SSH-only and HTTPS-only failures, GitHub flapping, the agent losing contact mid-switch |
-| 7 | A repo deleted on GitHub, the App uninstalled, a sync straight after a restore |
+| 7 | A repo deleted on GitHub, the App uninstalled, a sync straight after a restore, dropped, repeated and out-of-order webhooks |
 
 Every fault is seeded, so any failing run can be repeated exactly. Proposed targets: at least 200 seeds per scenario family at each milestone exit, and thousands in milestone 6. These numbers are a starting point.
 
