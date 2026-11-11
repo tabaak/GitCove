@@ -85,6 +85,20 @@ func git(t *testing.T, dir string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
+// A developer running GitCove on their own machine has `cove client on` in ~/.gitconfig, which
+// would send GitCove's own fetches from GitHub back to itself.
+func TestIgnoresUserGitConfig(t *testing.T) {
+	e := setup(t, 1, "app")
+	cfg := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(cfg, []byte("[url \"http://127.0.0.1:9/\"]\n\tinsteadOf = "+e.hub.URL+"/\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", cfg)
+	if err := e.m.Cycle(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCloneWhileGitHubDown(t *testing.T) {
 	ctx := context.Background()
 	e := setup(t, 1, "app", "other")

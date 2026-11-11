@@ -212,7 +212,9 @@ func (s *Store) run(ctx context.Context, dir string, env []string, args ...strin
 func (s *Store) runIn(ctx context.Context, dir string, env []string, stdin io.Reader, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, s.Git, args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), append(env, "GIT_TERMINAL_PROMPT=0")...)
+	// Ignore the user's and system Git config: `cove client on` there would send GitCove's own
+	// fetches and pushes back to itself, and a credential helper there could pop up a login.
+	cmd.Env = append(os.Environ(), append(env, "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")...)
 	if stdin != nil {
 		cmd.Stdin = stdin
 	}
