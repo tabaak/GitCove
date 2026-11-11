@@ -23,7 +23,16 @@ import (
 //go:embed templates.html
 var templateFS embed.FS
 
-var tmpl = template.Must(template.New("").ParseFS(templateFS, "templates.html"))
+var tmpl = template.Must(template.New("").Funcs(template.FuncMap{"when": when}).ParseFS(templateFS, "templates.html"))
+
+// when shows an RFC 3339 timestamp as "2 Jan 2026, 15:04 UTC", or as given if it doesn't parse.
+func when(s string) string {
+	t, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		return s
+	}
+	return t.UTC().Format("2 Jan 2006, 15:04 UTC")
+}
 
 const cookieName = "cove_token"
 

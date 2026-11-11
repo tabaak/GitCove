@@ -5,22 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GitCove</title>
 <style>
-  :root { --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --bg: #fff; --warn: #fff8c5; --info: #ddf4ff; --accent: #0969da; }
-  @media (prefers-color-scheme: dark) { :root { --fg: #e6edf3; --muted: #9198a1; --line: #3d444d; --bg: #0d1117; --warn: #3b2e00; --info: #0c2d4a; --accent: #4493f8; } }
-  body { font: 15px/1.5 system-ui, sans-serif; color: var(--fg); background: var(--bg); margin: 0 auto; max-width: 860px; padding: 0 16px 48px; }
+  :root { --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --bg: #fff; --warn: #fff8c5; --info: #ddf4ff; --accent: #0969da; --subtle: #f6f8fa; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #e6edf3; --muted: #9198a1; --line: #3d444d; --bg: #0d1117; --warn: #3b2e00; --info: #0c2d4a; --accent: #4493f8; --subtle: #151b23; } }
+  body { font: 16px/1.6 system-ui, sans-serif; color: var(--fg); background: var(--bg); margin: 0 auto; max-width: 860px; padding: 0 16px 48px; }
   header { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--line); }
   header form { margin: 0; }
   a { color: var(--accent); text-decoration: none; }
   .banner { margin: 12px 0; padding: 8px 12px; border-radius: 6px; background: var(--info); }
   .banner.failover { background: var(--warn); }
-  .muted { color: var(--muted); font-size: 13px; }
-  .badge { font-size: 12px; border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; margin-left: 4px; color: var(--muted); white-space: nowrap; }
+  .muted { color: var(--muted); font-size: 14px; }
+  h1 .muted { font-size: 0.7em; font-weight: normal; }
+  .badge { font-size: 13px; border: 1px solid var(--line); border-radius: 999px; padding: 1px 10px; margin-left: 4px; color: var(--muted); white-space: nowrap; }
   table { width: 100%; border-collapse: collapse; }
-  td { padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td { padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td:first-child, td:last-child { width: 1%; white-space: nowrap; }
   .text { white-space: pre-wrap; overflow-wrap: anywhere; }
   .post { border: 1px solid var(--line); border-radius: 6px; margin: 12px 0; }
-  .post > div { padding: 8px 12px; }
-  .post > .muted { border-bottom: 1px solid var(--line); }
+  .post > div { padding: 10px 16px; }
+  .post > .muted { border-bottom: 1px solid var(--line); background: var(--subtle); border-radius: 6px 6px 0 0; }
   input[type=text], textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 6px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
   textarea { min-height: 120px; }
   button, a.button { font: inherit; padding: 4px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; }
@@ -103,7 +105,7 @@
   {{range .Labels}}<span class="badge">{{.}}</span>{{end}}
 </p>
 {{if .Queued}}<p class="muted">Queued for GitHub: {{range $i, $q := .Queued}}{{if $i}}; {{end}}{{$q}}{{end}}.</p>{{end}}
-<div class="post"><div class="muted">{{.Author}} · {{.At}}</div><div class="text">{{.Body}}</div></div>
+<div class="post"><div class="muted"><strong>{{.Author}}</strong> · {{when .At}}</div><div class="text">{{.Body}}</div></div>
 {{if and $.Writable .EditableBody}}
 <details><summary>Edit title and description</summary>
 <form method="post" action="/{{$.Repo.FullName}}/issues/{{.Ref}}/edit">
@@ -115,7 +117,7 @@
 </details>
 {{end}}
 {{range .Posts}}
-<div class="post"><div class="muted">{{.Author}} · {{.At}}{{if .Badge}}<span class="badge">{{.Badge}}</span>{{end}}</div><div class="text">{{.Body}}</div></div>
+<div class="post"><div class="muted"><strong>{{.Author}}</strong> · {{when .At}}{{if .Badge}}<span class="badge">{{.Badge}}</span>{{end}}</div><div class="text">{{.Body}}</div></div>
 {{end}}
 {{if $.Writable}}
 {{if or .Labels .AddLabels}}<div class="actions"><span class="muted">Labels:</span>
