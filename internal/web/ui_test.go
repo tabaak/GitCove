@@ -123,4 +123,10 @@ func TestUI(t *testing.T) {
 	if _, body := do("GET", "/org/app/issues/1", nil); !strings.Contains(body, "new title") || !strings.Contains(body, "closed by ben, queued") {
 		t.Errorf("#1 page doesn't show queued changes: %s", body)
 	}
+	for _, op := range []string{"remove", "add", "remove"} {
+		do("POST", "/org/app/issues/1/label", url.Values{"op": {op}, "label": {"bug"}})
+	}
+	if _, body := do("GET", "/org/app/issues/1", nil); strings.Contains(body, "label + bug") || strings.Contains(body, "label - bug") {
+		t.Errorf("label toggled back to how GitHub has it is still listed as queued: %s", body)
+	}
 }

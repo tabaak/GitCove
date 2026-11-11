@@ -256,6 +256,21 @@ func (s *Server) thread(r *http.Request, p *page, ref string) (thread, int, erro
 			th.Posts = append(th.Posts, post{c.Author, c.Body, c.CreatedAt, ""})
 		}
 	}
+	// Queued shows each change's net effect, not every click: the latest change per label, state or
+	// field, and nothing once it is back to how it started.
+	baseLabels, baseState, base := slices.Clone(th.Labels), th.State, map[string]string{"title": th.Title, "body": th.Body}
+	net := map[string]string{}
+	var order []string
+	note := func(key, desc string, undone bool) {
+		if undone {
+			delete(net, key)
+			return
+		}
+		if !slices.Contains(order, key) {
+			order = append(order, key)
+		}
+		net[key] = desc
+	}
 	for _, it := range items {
 		if it.Issue != ref || it.Kind == "issue" {
 			continue
@@ -270,17 +285,23 @@ func (s *Server) thread(r *http.Request, p *page, ref string) (thread, int, erro
 			} else if !c.Add {
 				th.Labels = slices.DeleteFunc(th.Labels, func(l string) bool { return l == c.Label })
 			}
-			th.Queued = append(th.Queued, fmt.Sprintf("label %s %s by %s, %s", map[bool]string{true: "+", false: "-"}[c.Add], c.Label, c.Author, badge))
+			note("label "+c.Label, fmt.Sprintf("label %s %s by %s, %s", map[bool]string{true: "+", false: "-"}[c.Add], c.Label, c.Author, badge),
+				slices.Contains(baseLabels, c.Label) == c.Add)
 		case "state":
 			th.State = c.State
-			th.Queued = append(th.Queued, fmt.Sprintf("%s by %s, %s", map[string]string{"open": "reopened", "closed": "closed"}[c.State], c.Author, badge))
+			note("state", fmt.Sprintf("%s by %s, %s", map[string]string{"open": "reopened", "closed": "closed"}[c.State], c.Author, badge), c.State == baseState)
 		case "edit":
 			if c.Field == "title" {
 				th.Title = c.Value
 			} else {
 				th.Body = c.Value
 			}
-			th.Queued = append(th.Queued, fmt.Sprintf("%s edited by %s, %s", c.Field, c.Author, badge))
+			note("edit "+c.Field, fmt.Sprintf("%s edited by %s, %s", c.Field, c.Author, badge), c.Value == base[c.Field])
+		}
+	}
+	for _, k := range order {
+		if d, ok := net[k]; ok {
+			th.Queued = append(th.Queued, d)
 		}
 	}
 	labels, err := s.Store.Labels(ctx, p.Repo.ID)

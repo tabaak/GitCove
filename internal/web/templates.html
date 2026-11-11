@@ -23,15 +23,18 @@
   .post > .muted { border-bottom: 1px solid var(--line); }
   input[type=text], textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 6px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
   textarea { min-height: 120px; }
-  button { font: inherit; padding: 4px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; }
-  form.inline { display: inline; }
+  button, a.button { font: inherit; padding: 4px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; }
   details { margin: 12px 0; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; margin: 12px 0; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+  .actions form { margin: 0; }
+  fieldset { border: 1px solid var(--line); border-radius: 6px; margin: 12px 0; }
 </style>
 </head>
 <body>
 <header>
-  <a href="/"><strong>GitCove</strong></a>
-  {{if .User.Name}}<span class="muted">{{.User.Name}} <form class="inline" method="post" action="/logout"><button>Sign out</button></form></span>{{end}}
+  <nav><a href="/"><strong>GitCove</strong></a>{{if .Repo.Name}} / <a href="/{{.Repo.FullName}}/issues">{{.Repo.FullName}}</a>{{end}}</nav>
+  {{if .User.Name}}<div class="actions"><span class="muted">{{.User.Name}}</span><form method="post" action="/logout"><button>Sign out</button></form></div>{{end}}
 </header>
 {{if .User.Name}}
 <div class="banner {{.Mode}}">
@@ -60,13 +63,14 @@
 {{template "foot"}}{{end}}
 
 {{define "issues"}}{{template "head" .}}
-<h1>{{.Repo.FullName}}</h1>
-<p>
-  {{$s := .Data.State}}{{if eq $s "open"}}<strong>open</strong>{{else}}<a href="?state=open">open</a>{{end}}
-  {{if eq $s "closed"}}<strong>closed</strong>{{else}}<a href="?state=closed">closed</a>{{end}}
-  {{if eq $s "all"}}<strong>all</strong>{{else}}<a href="?state=all">all</a>{{end}}
-  {{if .Writable}} · <a href="/{{.Repo.FullName}}/issues/new">New issue</a>{{end}}
-</p>
+<h1>Issues and pull requests</h1>
+<div class="bar">
+  <span>Show:
+  {{$s := .Data.State}}{{if eq $s "open"}}<strong>open</strong>{{else}}<a href="?state=open">open</a>{{end}} ·
+  {{if eq $s "closed"}}<strong>closed</strong>{{else}}<a href="?state=closed">closed</a>{{end}} ·
+  {{if eq $s "all"}}<strong>all</strong>{{else}}<a href="?state=all">all</a>{{end}}</span>
+  {{if .Writable}}<a class="button" href="/{{.Repo.FullName}}/issues/new">New issue</a>{{end}}
+</div>
 <table>
 {{range .Data.Rows}}
   <tr>
@@ -82,13 +86,13 @@
 {{template "foot"}}{{end}}
 
 {{define "new"}}{{template "head" .}}
-<h1>New issue in {{.Repo.FullName}}</h1>
+<h1>New issue</h1>
 <form method="post" action="/{{.Repo.FullName}}/issues">
   <p><label>Title<br><input type="text" name="title" required maxlength="256"></label></p>
   <p><label>Description<br><textarea name="body"></textarea></label></p>
-  {{if .Data}}<p>Labels: {{range .Data}}<label><input type="checkbox" name="label" value="{{.}}"> {{.}}</label> {{end}}</p>{{end}}
-  <button>Queue issue</button>
+  {{if .Data}}<fieldset><legend>Labels</legend>{{range .Data}}<label><input type="checkbox" name="label" value="{{.}}"> {{.}}</label> {{end}}</fieldset>{{end}}
   <p class="muted">It gets a temporary number such as L-3 until replay creates it on GitHub. Mention it elsewhere as #L-3 and replay rewrites that to the real number.</p>
+  <button>Queue issue</button>
 </form>
 {{template "foot"}}{{end}}
 
@@ -100,33 +104,33 @@
 </p>
 {{if .Queued}}<p class="muted">Queued for GitHub: {{range $i, $q := .Queued}}{{if $i}}; {{end}}{{$q}}{{end}}.</p>{{end}}
 <div class="post"><div class="muted">{{.Author}} · {{.At}}</div><div class="text">{{.Body}}</div></div>
-{{range .Posts}}
-<div class="post"><div class="muted">{{.Author}} · {{.At}}{{if .Badge}}<span class="badge">{{.Badge}}</span>{{end}}</div><div class="text">{{.Body}}</div></div>
-{{end}}
-{{if $.Writable}}
-<form method="post" action="/{{$.Repo.FullName}}/issues/{{.Ref}}/comment">
-  <p><textarea name="body" required placeholder="Comment"></textarea></p>
-  <button>Queue comment</button>
-</form>
-<p>
-  <form class="inline" method="post" action="/{{$.Repo.FullName}}/issues/{{.Ref}}/state">
-    {{if eq .State "open"}}<input type="hidden" name="state" value="closed"><button>Close</button>
-    {{else}}<input type="hidden" name="state" value="open"><button>Reopen</button>{{end}}
-  </form>
-  {{range .Labels}}<form class="inline" method="post" action="/{{$.Repo.FullName}}/issues/{{$.Data.Ref}}/label">
-    <input type="hidden" name="op" value="remove"><input type="hidden" name="label" value="{{.}}"><button>− {{.}}</button></form>{{end}}
-  {{range .AddLabels}}<form class="inline" method="post" action="/{{$.Repo.FullName}}/issues/{{$.Data.Ref}}/label">
-    <input type="hidden" name="op" value="add"><input type="hidden" name="label" value="{{.}}"><button>+ {{.}}</button></form>{{end}}
-</p>
-{{if .EditableBody}}
+{{if and $.Writable .EditableBody}}
 <details><summary>Edit title and description</summary>
 <form method="post" action="/{{$.Repo.FullName}}/issues/{{.Ref}}/edit">
   <p><input type="text" name="title" value="{{.Title}}" required maxlength="256"></p>
   <p><textarea name="body">{{.Body}}</textarea></p>
-  <button>Queue edit</button>
   <p class="muted">If GitHub's version changes meanwhile, GitHub's is kept and yours is posted as a comment.</p>
+  <button>Queue edit</button>
 </form>
 </details>
 {{end}}
+{{range .Posts}}
+<div class="post"><div class="muted">{{.Author}} · {{.At}}{{if .Badge}}<span class="badge">{{.Badge}}</span>{{end}}</div><div class="text">{{.Body}}</div></div>
+{{end}}
+{{if $.Writable}}
+{{if or .Labels .AddLabels}}<div class="actions"><span class="muted">Labels:</span>
+  {{range .Labels}}<form method="post" action="/{{$.Repo.FullName}}/issues/{{$.Data.Ref}}/label">
+    <input type="hidden" name="op" value="remove"><input type="hidden" name="label" value="{{.}}"><button title="Remove label {{.}}">− {{.}}</button></form>{{end}}
+  {{range .AddLabels}}<form method="post" action="/{{$.Repo.FullName}}/issues/{{$.Data.Ref}}/label">
+    <input type="hidden" name="op" value="add"><input type="hidden" name="label" value="{{.}}"><button title="Add label {{.}}">+ {{.}}</button></form>{{end}}
+</div>{{end}}
+<form method="post" action="/{{$.Repo.FullName}}/issues/{{.Ref}}/comment">
+  <p><textarea name="body" required placeholder="Comment"></textarea></p>
+  <div class="actions"><button>Queue comment</button>
+    <button form="state" title="Queues the change for GitHub">{{if eq .State "open"}}Close issue{{else}}Reopen issue{{end}}</button></div>
+</form>
+<form id="state" method="post" action="/{{$.Repo.FullName}}/issues/{{.Ref}}/state">
+  <input type="hidden" name="state" value="{{if eq .State "open"}}closed{{else}}open{{end}}">
+</form>
 {{end}}
 {{end}}{{template "foot"}}{{end}}
