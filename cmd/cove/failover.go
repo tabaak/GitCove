@@ -209,10 +209,15 @@ func printIssuePlan(ctx context.Context, a *app) error {
 	}
 	counts := map[string]int{}
 	for _, s := range steps {
+		if s.Kind == "issue" && s.Change.Head != "" {
+			counts["pr"]++
+			continue
+		}
 		counts[s.Kind]++
 	}
-	fmt.Printf("\nChanges to issues: %d new issues, %d comments, %d label changes, %d closes or reopens, %d edits.\n",
-		counts["issue"], counts["comment"], counts["label"], counts["state"], counts["edit"])
+	fmt.Printf("\nChanges to issues and PRs: %d new issues, %d new PRs, %d comments, %d label changes, %d closes or reopens, %d edits, "+
+		"%d reviews, %d replies to line comments, %d local merges.\n", counts["issue"], counts["pr"], counts["comment"], counts["label"],
+		counts["state"], counts["edit"], counts["review"], counts["reply"], counts["merge"])
 	fmt.Printf("About %d writes to GitHub, taking at least %s at the write budget.\n", len(steps), ghclient.DefaultBudget.Estimate(len(steps)).Round(time.Second))
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(w, "ID\tREPO\tCHANGE\tON\tBY\tPOSTED AS\tSTATUS")
@@ -221,6 +226,9 @@ func printIssuePlan(ctx context.Context, a *app) error {
 		status := cmp.Or(s.Waits, "ready")
 		if s.State == "sending" {
 			status = "may have been sent: replay looks for it on GitHub before anything else"
+		}
+		if s.Duplicate != "" {
+			status += fmt.Sprintf("; LIKELY DUPLICATE of %s, opened on GitHub since with the same title: `cove replay skip %d` unless both are wanted", s.Duplicate, s.ID)
 		}
 		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\t%s\n", s.ID, s.Repo, describe(s.Item), s.Issue, s.Change.Author, poster, status)
 	}
@@ -231,7 +239,16 @@ func describe(it store.Item) string {
 	c := it.Change
 	switch it.Kind {
 	case "issue":
+		if c.Head != "" {
+			return fmt.Sprintf("new PR %.40q (%s into %s)", c.Title, c.Head, c.Base)
+		}
 		return fmt.Sprintf("new issue %.40q", c.Title)
+	case "review":
+		return fmt.Sprintf("review (%s, %d line comments) of %.8s", strings.ReplaceAll(c.Verdict, "_", " "), len(c.Comments), c.Commit)
+	case "reply":
+		return "reply to a line comment"
+	case "merge":
+		return "note that it was merged into " + c.Base + " on GitCove"
 	case "label":
 		return map[bool]string{true: "label +", false: "label -"}[c.Add] + c.Label
 	case "state":
@@ -284,12 +301,8 @@ func branchCmd(cfg config, args []string) error {
 }
 
 func repoCmd(cfg config, args []string) error {
-	if len(args) != 3 || args[0] != "pr-only" {
-		return errors.New("repo: want pr-only OWNER/REPO on|off")
-	}
-	on, err := onOff(args[2:], "repo pr-only")
-	if err != nil {
-		return err
+	if len(args) != 3 || args[0] != "pr-only" && args[0] != "approvals" {
+		return errors.New("repo: want pr-only OWNER/REPO on|off, or approvals OWNER/REPO N")
 	}
 	st, err := openStore(cfg)
 	if err != nil {
@@ -298,6 +311,17 @@ func repoCmd(cfg config, args []string) error {
 	defer st.Close()
 	ctx := context.Background()
 	r, err := repoArg(ctx, st, args[1])
+	if err != nil {
+		return err
+	}
+	if args[0] == "approvals" {
+		n, err := strconv.Atoi(args[2])
+		if err != nil || n < 0 {
+			return errors.New("repo approvals: want a number, 0 or more")
+		}
+		return st.SetApprovals(ctx, cliActor(), r, n)
+	}
+	on, err := onOff(args[2:], "repo pr-only")
 	if err != nil {
 		return err
 	}

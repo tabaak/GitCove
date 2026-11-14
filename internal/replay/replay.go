@@ -256,7 +256,7 @@ func (r *Replayer) openPR(ctx context.Context, a Action) (int, error) {
 	if n, err := r.GH.FindPR(ctx, a.Repo.Owner, a.Repo.Name, a.Target); err != nil || n != 0 {
 		return n, err
 	}
-	n, err := r.GH.CreatePR(ctx, a.Repo.Owner, a.Repo.Name, ghclient.NewPR{
+	n, err := r.GH.CreatePR(ctx, a.Repo.Owner, a.Repo.Name, "", ghclient.NewPR{
 		Title: "GitCove: work pushed to " + a.Branch + " during a GitHub outage",
 		Head:  a.Target, Base: a.Branch, Body: prBody(a),
 	})

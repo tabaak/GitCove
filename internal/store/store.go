@@ -107,6 +107,7 @@ type Repo struct {
 	DefaultBranch string
 	SyncedAt      string // last successful sync, empty if never
 	SyncError     string // error of the last sync, empty if it succeeded
+	Approvals     int    // approvals on GitCove a PR needs before a local merge (decision D4)
 }
 
 func (r Repo) FullName() string { return r.Owner + "/" + r.Name }
@@ -132,11 +133,11 @@ func (s *Store) MarkSynced(ctx context.Context, id int64, syncErr error) error {
 	return err
 }
 
-const repoCols = "id, github_id, owner, name, default_branch, coalesce(synced_at, ''), coalesce(sync_error, '')"
+const repoCols = "id, github_id, owner, name, default_branch, coalesce(synced_at, ''), coalesce(sync_error, ''), approvals"
 
 func scanRepo(row interface{ Scan(...any) error }) (Repo, error) {
 	var r Repo
-	err := row.Scan(&r.ID, &r.GitHubID, &r.Owner, &r.Name, &r.DefaultBranch, &r.SyncedAt, &r.SyncError)
+	err := row.Scan(&r.ID, &r.GitHubID, &r.Owner, &r.Name, &r.DefaultBranch, &r.SyncedAt, &r.SyncError, &r.Approvals)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = ErrNotFound
 	}

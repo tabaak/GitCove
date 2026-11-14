@@ -170,8 +170,18 @@ func (s *Store) Comments(ctx context.Context, repoID int64, number int) ([]Comme
 	return out, rows.Err()
 }
 
-// Change is what a person did to an issue on GitCove. Fields by item kind: issue (Title, Body,
-// Labels), comment (Body), label (Label, Add), state (State), edit (Field "title" or "body", Value).
+// LineComment is a review's comment on one line of a file. Side is RIGHT (the new version) or LEFT.
+type LineComment struct {
+	Path string `json:"path"`
+	Line int    `json:"line"`
+	Side string `json:"side"`
+	Body string `json:"body"`
+}
+
+// Change is what a person did to an issue or PR on GitCove. Fields by item kind: issue (Title,
+// Body, Labels; a new PR also has Head and Base), comment (Body), label (Label, Add), state
+// (State; Via if a local merge closed it), edit (Field "title" or "body", Value), review (Body,
+// Verdict, Commit, Comments), reply (Body, Parent), merge (Head, Base, Commit, Body).
 type Change struct {
 	Author string   `json:"author"` // the GitCove token's name
 	Title  string   `json:"title,omitempty"`
@@ -182,6 +192,14 @@ type Change struct {
 	State  string   `json:"state,omitempty"`
 	Field  string   `json:"field,omitempty"`
 	Value  string   `json:"value,omitempty"`
+
+	Head     string        `json:"head,omitempty"`     // new PR or merge: the branch with the work
+	Base     string        `json:"base,omitempty"`     // new PR or merge: the branch it goes into
+	Verdict  string        `json:"verdict,omitempty"`  // review: comment, approve or request_changes
+	Commit   string        `json:"commit,omitempty"`   // review: the commit reviewed; merge: the merge commit
+	Comments []LineComment `json:"comments,omitempty"` // review
+	Parent   string        `json:"parent,omitempty"`   // reply: "c<GitHub ID>", or "<review's op ID>/<index>" for a queued review's comment
+	Via      string        `json:"via,omitempty"`      // state: the locally merged PR that closed it; GitHub closes it when that PR merges there, so replay doesn't
 }
 
 // Item is a queued change to an issue or PR (design 8.2).
@@ -190,7 +208,7 @@ type Item struct {
 	OpID             string
 	RepoID           int64
 	Repo             string // owner/name
-	Kind             string // issue, comment, label, state or edit
+	Kind             string // issue, comment, label, state, edit, review, reply or merge
 	Issue            string // the number or L-n acted on; for kind issue, its own L-n
 	TokenID          int64
 	Base             string // for state and edit: GitHub's value the change was made against
@@ -207,33 +225,39 @@ type Item struct {
 // L-n. State and edit items record the value they change: the latest queued change of the same
 // field, else the mirror's, so each change is replayed against the one before it.
 func (s *Store) Record(ctx context.Context, repoID, tokenID int64, kind, issue string, c Change) (string, error) {
-	err := s.tx(ctx, func(tx *sql.Tx) error {
-		if m, err := mode(tx); err != nil {
-			return err
-		} else if m != Failover {
-			return fmt.Errorf("%w: GitCove takes changes only during failover (mode is %s)", ErrWrongMode, m)
-		}
-		var base any
-		switch kind {
-		case "issue":
-			var n int
-			if err := tx.QueryRow("SELECT count(*) + 1 FROM outbox WHERE repo_id = ? AND kind = 'issue'", repoID).Scan(&n); err != nil {
-				return err
-			}
-			issue = fmt.Sprintf("L-%d", n)
-		case "state", "edit":
-			b, err := currentValue(tx, repoID, issue, kind, c.Field)
-			if err != nil {
-				return err
-			}
-			base = b
-		}
-		payload, _ := json.Marshal(c)
-		_, err := tx.Exec("INSERT INTO outbox (op_id, repo_id, kind, issue, token_id, base_version, payload) VALUES (?, ?, ?, ?, ?, ?, ?)",
-			opID(), repoID, kind, issue, tokenID, base, payload)
+	err := s.tx(ctx, func(tx *sql.Tx) (err error) {
+		issue, _, err = record(tx, repoID, tokenID, kind, issue, c)
 		return err
 	})
 	return issue, err
+}
+
+func record(tx *sql.Tx, repoID, tokenID int64, kind, issue string, c Change) (string, int64, error) {
+	if m, err := mode(tx); err != nil {
+		return "", 0, err
+	} else if m != Failover {
+		return "", 0, fmt.Errorf("%w: GitCove takes changes only during failover (mode is %s)", ErrWrongMode, m)
+	}
+	var base any
+	switch kind {
+	case "issue":
+		var n int
+		if err := tx.QueryRow("SELECT count(*) + 1 FROM outbox WHERE repo_id = ? AND kind = 'issue'", repoID).Scan(&n); err != nil {
+			return "", 0, err
+		}
+		issue = fmt.Sprintf("L-%d", n)
+	case "state", "edit":
+		b, err := currentValue(tx, repoID, issue, kind, c.Field)
+		if err != nil {
+			return "", 0, err
+		}
+		base = b
+	}
+	payload, _ := json.Marshal(c)
+	var id int64
+	err := tx.QueryRow("INSERT INTO outbox (op_id, repo_id, kind, issue, token_id, base_version, payload) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id",
+		opID(), repoID, kind, issue, tokenID, base, payload).Scan(&id)
+	return issue, id, err
 }
 
 func currentValue(tx *sql.Tx, repoID int64, issue, kind, field string) (string, error) {
@@ -303,7 +327,8 @@ func (s *Store) EditLocal(ctx context.Context, repoID int64, localID, title, bod
 }
 
 // MetaItems lists items on issues in the given states, in replay order (design 8.5): new issues,
-// then comments, then labels and state, then edits, each oldest first. repoID 0 means every repo.
+// then comments and merge notes, then labels and state, then edits, then reviews, then replies,
+// each oldest first. repoID 0 means every repo.
 func (s *Store) MetaItems(ctx context.Context, repoID int64, states ...string) ([]Item, error) {
 	args := []any{repoID, repoID}
 	for _, st := range states {
@@ -314,7 +339,8 @@ func (s *Store) MetaItems(ctx context.Context, repoID int64, states ...string) (
 		coalesce(o.result, ''), o.created_at, o.updated_at, o.payload
 		FROM outbox o JOIN repos r ON r.id = o.repo_id
 		WHERE o.kind != 'ref' AND (? = 0 OR o.repo_id = ?) AND o.state IN (?`+strings.Repeat(", ?", len(states)-1)+`)
-		ORDER BY CASE o.kind WHEN 'issue' THEN 2 WHEN 'comment' THEN 3 WHEN 'edit' THEN 5 ELSE 4 END, o.id`, args...)
+		ORDER BY CASE o.kind WHEN 'issue' THEN 2 WHEN 'comment' THEN 3 WHEN 'merge' THEN 3 WHEN 'edit' THEN 5
+			WHEN 'review' THEN 6 WHEN 'reply' THEN 7 ELSE 4 END, o.id`, args...)
 	if err != nil {
 		return nil, err
 	}

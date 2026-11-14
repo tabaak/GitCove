@@ -280,15 +280,31 @@ func opID() string {
 	return hex.EncodeToString(b)
 }
 
-// HeldBranches lists the repo's branches with unreplayed or unresolved pushes. Their served refs
-// stay where developers left them instead of following GitHub.
+// HeldBranches lists the repo's branches with unreplayed or unresolved pushes or local merges.
+// Their served refs stay where developers left them instead of following GitHub.
 func (s *Store) HeldBranches(ctx context.Context, repoID int64) (map[string]bool, error) {
 	items, err := s.RefItems(ctx, repoID, "pending", "sending", "conflict", "uncertain")
+	if err != nil {
+		return nil, err
+	}
 	held := map[string]bool{}
 	for _, it := range items {
 		held[it.Branch] = true
 	}
-	return held, err
+	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT json_extract(payload, '$.base') FROM outbox
+		WHERE repo_id = ? AND kind = 'merge' AND state IN ('pending', 'sending', 'conflict', 'uncertain')`, repoID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var b string
+		if err := rows.Scan(&b); err != nil {
+			return nil, err
+		}
+		held[b] = true
+	}
+	return held, rows.Err()
 }
 
 // RefItems lists ref items in the given states, oldest first. repoID 0 means every repo.

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 )
 
@@ -90,23 +91,22 @@ func clientCmd(args []string) error {
 	return fmt.Errorf("client: unknown subcommand %q", args[0])
 }
 
-// authorise asks GitCove to link this token to the developer's GitHub account through GitHub's
-// device flow, and prints what GitCove streams back: the code to enter, then the outcome.
-func authorise() error {
+// coveRequest makes a POST to GitCove with the developer's token from Git's credential helper.
+func coveRequest(path string, form url.Values) (*http.Response, error) {
 	base, err := gitOut("config", "--global", "--get", "cove.url")
 	if err != nil {
-		return errors.New("client: run `cove client setup` first")
+		return nil, errors.New("client: run `cove client setup` first")
 	}
 	u, err := url.Parse(base)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	cmd := exec.Command("git", "credential", "fill")
 	cmd.Stdin = strings.NewReader(fmt.Sprintf("protocol=%s\nhost=%s\n\n", u.Scheme, u.Host))
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	out, err := cmd.Output()
 	if err != nil {
-		return fmt.Errorf("no GitCove token in Git's credential helper (run `cove client setup`): %w", err)
+		return nil, fmt.Errorf("no GitCove token in Git's credential helper (run `cove client setup`): %w", err)
 	}
 	var tok string
 	for _, l := range strings.Split(string(out), "\n") {
@@ -114,12 +114,20 @@ func authorise() error {
 			tok = v
 		}
 	}
-	req, err := http.NewRequest("POST", base+"/api/authorise", nil)
+	req, err := http.NewRequest("POST", base+path, strings.NewReader(form.Encode()))
 	if err != nil {
-		return err
+		return nil, err
 	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.SetBasicAuth("x", tok)
-	resp, err := http.DefaultClient.Do(req) // no timeout: GitCove waits while the code is entered
+	// No timeout: authorising waits while the code is entered. Redirects are the caller's to read.
+	return (&http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}).Do(req)
+}
+
+// authorise asks GitCove to link this token to the developer's GitHub account through GitHub's
+// device flow, and prints what GitCove streams back: the code to enter, then the outcome.
+func authorise() error {
+	resp, err := coveRequest("/api/authorise", nil)
 	if err != nil {
 		return err
 	}
@@ -138,6 +146,60 @@ func authorise() error {
 		return errors.New("not authorised")
 	}
 	return sc.Err()
+}
+
+var originRe = regexp.MustCompile(`github\.com[:/]([^/]+)/([^/]+?)(?:\.git)?/?$`)
+
+// prCmd opens or merges a PR on GitCove from inside a clone, during a failover. It posts the
+// same forms as the web interface.
+func prCmd(args []string) error {
+	// The configured URL, not `git remote get-url`, which would apply the insteadOf rule.
+	origin, err := gitOut("config", "--get", "remote.origin.url")
+	m := originRe.FindStringSubmatch(origin)
+	if err != nil || m == nil {
+		return errors.New("pr: run this inside a clone whose origin is the repo on GitHub")
+	}
+	repo := "/" + m[1] + "/" + m[2]
+	var path string
+	form := url.Values{}
+	switch {
+	case len(args) >= 1 && args[0] == "create":
+		fs := flag.NewFlagSet("pr create", flag.ContinueOnError)
+		title := fs.String("title", "", "the PR's title (default: the last commit's subject)")
+		body := fs.String("body", "", "the PR's description")
+		base := fs.String("base", "", "the branch to merge into (default: the repo's default branch)")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		head, err := gitOut("symbolic-ref", "--short", "HEAD")
+		if err != nil {
+			return errors.New("pr create: check out the branch to open the PR from")
+		}
+		if *title == "" {
+			*title, _ = gitOut("log", "-1", "--format=%s")
+		}
+		path, form = repo+"/pulls", url.Values{"title": {*title}, "body": {*body}, "base": {*base}, "head": {head}}
+	case len(args) == 2 && args[0] == "merge":
+		path = repo + "/issues/" + url.PathEscape(strings.TrimPrefix(args[1], "#")) + "/merge"
+	default:
+		return errors.New("pr: want create [-title T] [-body B] [-base BRANCH], or merge NUMBER|L-n")
+	}
+	resp, err := coveRequest(path, form)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	loc := resp.Header.Get("Location")
+	if resp.StatusCode != http.StatusSeeOther || loc == "/login" {
+		b, _ := io.ReadAll(resp.Body)
+		if loc == "/login" {
+			b = []byte("your GitCove token isn't valid")
+		}
+		return fmt.Errorf("GitCove said: %s", strings.TrimSpace(string(b)))
+	}
+	base, _ := gitOut("config", "--global", "--get", "cove.url")
+	fmt.Printf("Done. It reaches GitHub after the outage: %s%s\n", base, loc)
+	return nil
 }
 
 func gitOut(args ...string) (string, error) {

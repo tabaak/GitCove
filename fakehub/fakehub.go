@@ -62,6 +62,8 @@ type PR struct {
 	Head, Base  string
 	Title, Body string
 	State       string
+	Author      string
+	Merged      bool
 }
 
 // Push is one ref update a push made, from the post-receive log.
@@ -118,6 +120,13 @@ func New(t testing.TB, seed uint64) *Hub {
 	mux.HandleFunc("GET /repos/{org}/{repo}/branches", h.inst(h.repo(h.branches)))
 	mux.HandleFunc("GET /repos/{org}/{repo}/pulls", h.inst(h.repo(h.listPRs)))
 	mux.HandleFunc("POST /repos/{org}/{repo}/pulls", h.inst(h.repo(h.createPR)))
+	mux.HandleFunc("GET /repos/{org}/{repo}/pulls/comments", h.inst(h.repo(h.listReviewComments)))
+	mux.HandleFunc("GET /repos/{org}/{repo}/pulls/{n}", h.inst(h.repo(h.getPR)))
+	mux.HandleFunc("GET /repos/{org}/{repo}/pulls/{n}/comments", h.inst(h.repo(h.listReviewComments)))
+	mux.HandleFunc("POST /repos/{org}/{repo}/pulls/{n}/comments/{id}/replies", h.inst(h.repo(h.createReply)))
+	mux.HandleFunc("GET /repos/{org}/{repo}/pulls/{n}/reviews", h.inst(h.repo(h.listReviews)))
+	mux.HandleFunc("POST /repos/{org}/{repo}/pulls/{n}/reviews", h.inst(h.repo(h.createReview)))
+	mux.HandleFunc("GET /repos/{org}/{repo}/pulls/{n}/reviews/{id}/comments", h.inst(h.repo(h.listReviewComments)))
 	mux.HandleFunc("GET /repos/{org}/{repo}/issues", h.inst(h.repo(h.listIssues)))
 	mux.HandleFunc("POST /repos/{org}/{repo}/issues", h.inst(h.repo(h.createIssue)))
 	mux.HandleFunc("GET /repos/{org}/{repo}/issues/comments", h.inst(h.repo(h.listComments)))
@@ -389,24 +398,22 @@ func (h *Hub) branches(w http.ResponseWriter, r *http.Request) {
 	h.json(w, r, http.StatusOK, list)
 }
 
-func prJSON(i *Issue) map[string]any {
-	return map[string]any{"number": i.Number, "state": i.State, "title": i.Title, "body": i.Body,
-		"head": map[string]any{"ref": i.Head}, "base": map[string]any{"ref": i.Base}}
-}
-
 func (h *Hub) listPRs(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	name := r.PathValue("repo")
 	_, head, _ := strings.Cut(q.Get("head"), ":")
 	state := cmp.Or(q.Get("state"), "open")
 	h.mu.Lock()
-	list := []map[string]any{}
-	for _, pr := range h.meta(r.PathValue("repo")).issues {
-		if pr.PR && (head == "" || pr.Head == head) && (state == "all" || pr.State == state) {
-			list = append(list, prJSON(pr))
+	var list []*Issue
+	for _, pr := range h.meta(name).issues {
+		if pr.PR && !time.Now().Before(pr.visible) && (head == "" || pr.Head == head) && (state == "all" || pr.State == state) {
+			c := *pr
+			list = append(list, &c)
 		}
 	}
 	h.mu.Unlock()
-	h.json(w, r, http.StatusOK, list)
+	h.listing(w, r, len(list), func(k int) time.Time { return list[k].Created }, func(k int) time.Time { return list[k].Updated },
+		func(k int) map[string]any { return h.prJSON(name, list[k]) })
 }
 
 func (h *Hub) createPR(w http.ResponseWriter, r *http.Request) {
@@ -447,12 +454,12 @@ func (h *Hub) createPR(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	t := now()
-	pr := &Issue{Number: len(m.issues) + 1, PR: true, Head: in.Head, Base: in.Base, Title: in.Title, Body: in.Body, FirstBody: in.Body, State: "open",
+	pr := &Issue{Number: len(m.issues) + 1, PR: true, Head: in.Head, Base: in.Base, BaseSHA: base, Title: in.Title, Body: in.Body, FirstBody: in.Body, State: "open",
 		Author: author, Created: t, Updated: t, visible: h.lag()}
 	m.issues = append(m.issues, pr)
-	out := prJSON(pr)
+	c := *pr
 	h.mu.Unlock()
-	h.json(w, r, http.StatusCreated, out)
+	h.json(w, r, http.StatusCreated, h.prJSON(name, &c))
 }
 
 // PRs returns the PRs created in repo name.
@@ -462,7 +469,7 @@ func (h *Hub) PRs(name string) []PR {
 	var out []PR
 	for _, i := range h.meta(name).issues {
 		if i.PR {
-			out = append(out, PR{Number: i.Number, Head: i.Head, Base: i.Base, Title: i.Title, Body: i.Body, State: i.State})
+			out = append(out, PR{Number: i.Number, Head: i.Head, Base: i.Base, Title: i.Title, Body: i.Body, State: i.State, Author: i.Author, Merged: i.Merged})
 		}
 	}
 	return out

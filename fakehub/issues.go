@@ -28,6 +28,8 @@ type Issue struct {
 	Labels           []string
 	PR               bool
 	Head, Base       string // PRs only
+	BaseSHA          string // PRs only: the base's commit when the PR was opened
+	Merged, Fork     bool   // PRs only
 	Created, Updated time.Time
 	visible          time.Time // listings show it from then on: the listing-lag fault
 }
@@ -44,6 +46,9 @@ type meta struct {
 	issues   []*Issue
 	comments []*Comment
 	labels   []string
+
+	reviews        []*Review
+	reviewComments []*ReviewComment
 }
 
 type device struct{ userCode, login string }
@@ -161,8 +166,9 @@ func (h *Hub) listComments(w http.ResponseWriter, r *http.Request) {
 		func(k int) map[string]any { return h.commentJSON(r.PathValue("org"), r.PathValue("repo"), list[k]) })
 }
 
-// issue finds issue n of the request's repo and calls f with h.mu held, or answers 404.
-func (h *Hub) issue(w http.ResponseWriter, r *http.Request, f func(m *meta, i *Issue) (int, any)) {
+// issue finds issue n of the request's repo and calls f with h.mu held, or answers 404. A render
+// function, if given, makes the body of a 200 after h.mu is released.
+func (h *Hub) issue(w http.ResponseWriter, r *http.Request, f func(m *meta, i *Issue) (int, any), render ...func() any) {
 	n, _ := strconv.Atoi(r.PathValue("n"))
 	h.mu.Lock()
 	m := h.meta(r.PathValue("repo"))
@@ -171,6 +177,9 @@ func (h *Hub) issue(w http.ResponseWriter, r *http.Request, f func(m *meta, i *I
 		status, out = f(m, m.issues[n-1])
 	}
 	h.mu.Unlock()
+	if status == http.StatusOK && len(render) > 0 {
+		out = render[0]()
+	}
 	h.json(w, r, status, out)
 }
 

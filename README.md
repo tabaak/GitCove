@@ -109,6 +109,25 @@ GitCove's web interface is at its root URL. Sign in with your GitCove token. It 
 
 **Nothing is posted twice.** Each post carries a hidden marker (`<!-- gitcove:op=... -->`), and the item is marked as sending before the request. If the answer is lost, or GitCove restarts, replay looks for the marker with GitHub's filtered listings before doing anything else. It waits at least 15 seconds after sending and checks three times, because those listings lag behind writes. If the marker turns up, the item is done. If not, the item becomes **uncertain**, and replay never posts it again by itself, because GitHub may simply not be listing it yet. Check GitHub, then `cove replay skip ID` if it's there, or `cove replay retry ID` to post it again. What GitHub refuses, such as a comment on a deleted or locked issue, goes to the conflicts list with the text kept.
 
+### Pull requests, reviews and merging during failover
+
+Each repo has a branch list (`/OWNER/REPO/branches`) with a comparison against the default branch. During failover:
+
+- **Open a PR** from the comparison page, or with `cove pr create` inside a clone. It gets an `L-n` number. "Fixes #12" or "Fixes #L-2" in its text works as on GitHub.
+- **Review** on a PR's "Files changed" page. Each line of the diff has a comment box. One submit sends the summary, the verdict (comment, approve or request changes) and every comment you wrote. The review is tied to the commit shown. Line comments can be replied to on the PR's page.
+- **Merge** with the button on the PR's page or `cove pr merge 12`, once the PR's current commit has the approvals the repo needs (default 1, never the author's own; `cove repo approvals OWNER/REPO N`). A new push needs a new approval. It is always a merge commit, and it's the only way a protected branch changes during failover. If the branches conflict, nothing is merged: merge the target into your branch, push, and get it approved again. GitHub's checks aren't run or required. Issues the PR says it fixes show as closed on GitCove.
+- PRs from forks can be read, commented on and reviewed, but not merged.
+
+**Replay** never pushes a merge. The PR's branch is pushed like any other, the PR is opened on GitHub (or already exists), and a note on it says it was merged on GitCove, at which commit, who approved, and which PRs were merged before it. A person merges it on GitHub, where the usual checks apply, and that closes the linked issues. Until the note is posted, the target branch on GitCove keeps the merge; then it follows GitHub again. So **work built on a local merge has that merge commit in its history** until the PRs are merged on GitHub, and if GitHub's checks reject one, later work needs rebasing.
+
+- A review is posted as a review on its commit, by the App with the reviewer named, or under the reviewer's own name if they linked their account.
+- An approval or change request counts on GitHub only if the reviewer linked their account and the PR is still at the commit they reviewed. Otherwise the review is posted as a comment that says "Approved on GitCove at commit ..., not applied".
+- If GitHub won't take the review, for example because its commit went to a `gitcove/...` fallback branch, it is posted as an ordinary comment quoting each file and line. A reply whose parent comment is gone is posted the same way.
+- If the PR was closed on GitHub without merging, the merge goes to the conflicts list and the admin is alerted.
+- `cove replay plan` flags a new issue or PR whose title matches one opened on GitHub since: probably re-filed by hand. Skip it unless both are wanted.
+
+Not supported: resolving conversations, draft status, assignees, changing a PR's base, and GitHub's check results.
+
 #### Posting under people's own names (optional)
 
 With `COVE_APP_CLIENT_ID`, `COVE_APP_CLIENT_SECRET_FILE` and `COVE_USER_KEY_FILE` set, each developer can run `cove client authorise` while GitHub is up. Their replayed work then appears under their GitHub name, with the App's badge, and ends with the time it was written. In the App's settings, tick "Enable Device Flow" and keep "Expire user authorization tokens" on.
@@ -155,7 +174,7 @@ If your admin enabled it, run `cove client authorise` once while GitHub is up, s
 ## Development
 
 ```sh
-go test ./...                                                        # includes the three fault campaigns on 10 seeds
+go test ./...                                                        # includes the four fault campaigns on 10 seeds
 COVE_SEEDS=200 go test -race ./internal/mirror ./internal/replay     # the nightly campaigns
 ```
 
@@ -182,6 +201,8 @@ The issue campaign in `internal/replay` (`TestIssueCampaign`) runs failovers in 
 
 Making replay resend after a restart, or apply edits without checking GitHub's version, makes it fail. `fakehub` also serves issues, comments and labels, the device flow, and user tokens whose refresh tokens rotate.
 
+The PR campaign (`TestPullCampaign`) adds a third person and has them push, open PRs, review with line comments, reply, approve and merge locally, while on GitHub PR branches and `main` move, PRs are closed or merged, line comments are deleted and the linked account is revoked. Besides the checks above, it checks that replay never pushed to `main`, and that every approval or change request on GitHub came from the reviewer's own account, for their own review, at the commit they reviewed. `fakehub` enforces GitHub's rules here: a review's commit must be part of the PR, an approval must be for the PR's head and not by its author, and a reply needs its parent.
+
 CI runs gofmt, `go vet`, golangci-lint, the tests with `-race`, and a Docker build. A nightly run uses 200 seeds.
 
 ## Code layout
@@ -189,10 +210,10 @@ CI runs gofmt, `go vet`, golangci-lint, the tests with `-race`, and a Docker bui
 ```
 cmd/cove/            server and admin CLI in one binary
 internal/ghclient/   GitHub API behind one interface: App JWT, installation tokens, ETags, rate limiter, write budget, device flow
-internal/gitstore/   bare repos, fetch, served refs, push, pre-receive hook, git http-backend
-internal/store/      SQLite in WAL mode, migrations, mode, outbox, mirrored issues, tokens, audit log
+internal/gitstore/   bare repos, fetch, served refs, push, pre-receive hook, local merges, diffs, git http-backend
+internal/store/      SQLite in WAL mode, migrations, mode, outbox, mirrored issues, PRs and reviews, tokens, audit log
 internal/mirror/     the sync loop (the plan's internal/sync): refs, branch protection, issues and comments
-internal/replay/     replay plan, history comparison, pushes and fallback PRs, issue and comment replay
+internal/replay/     replay plan, history comparison, pushes and fallback PRs, replay of issues, comments, PRs, reviews and merges
 internal/auth/       people's GitHub tokens: device flow, encryption, refresh
 internal/health/     API and Git probes
 internal/web/        HTTP: Git for developers, the web interface, /status

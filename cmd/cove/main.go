@@ -48,10 +48,14 @@ const usage = `usage: cove <command>
   branch mark|unmark OWNER/REPO BRANCH protected|deploy
                                            extra protected branches; deploy branches reach GitHub only through a PR
   repo pr-only OWNER/REPO on|off           send default and deploy branch work as PRs (default on)
+  repo approvals OWNER/REPO N              approvals a PR needs before it can be merged on GitCove (default 1)
 
   client setup -url URL -org ORG           on a developer machine: save GitCove's address and token (COVE_TOKEN or stdin)
   client on | client off                   send Git for the organisation to GitCove, or back to GitHub
   client authorise                         while GitHub is up: let GitCove post your outage work under your GitHub name
+  pr create [-title T] [-body B] [-base BRANCH]
+                                           during a failover, in a clone: open a PR on GitCove from the current branch
+  pr merge NUMBER|L-n                      during a failover: merge an approved PR into its base on GitCove
 
 Configuration comes from COVE_* environment variables (see README.md).
 `
@@ -73,6 +77,8 @@ func run(args []string) error {
 		os.Exit(gitstore.RunHook(args[1:]))
 	case "client":
 		return clientCmd(args[1:])
+	case "pr":
+		return prCmd(args[1:])
 	}
 	cfg, err := loadConfig()
 	if err != nil {

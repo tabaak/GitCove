@@ -3,6 +3,7 @@
 package mirror
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -119,7 +120,81 @@ func (m *Mirror) syncIssues(ctx context.Context, r store.Repo) error {
 	if err != nil {
 		return fmt.Errorf("sync labels: %w", err)
 	}
-	return m.Store.SetLabels(ctx, r.ID, labels)
+	if err := m.Store.SetLabels(ctx, r.ID, labels); err != nil {
+		return err
+	}
+	return m.syncPulls(ctx, r)
+}
+
+// syncPulls mirrors what PRs have beyond their issue row: branches, merged or not, reviews and
+// line comments. Reviews have no repo-wide listing, so they are read per PR, only for open PRs
+// that changed since the last sync.
+func (m *Mirror) syncPulls(ctx context.Context, r store.Repo) error {
+	pullsCur, commentsCur := fmt.Sprintf("repo:%d:pulls", r.ID), fmt.Sprintf("repo:%d:review_comments", r.ID)
+	since, err := m.Store.Cursor(ctx, pullsCur)
+	if err != nil {
+		return err
+	}
+	newest := since
+	var open []int
+	err = m.GH.PullsSince(ctx, r.Owner, r.Name, back(since), func(page []ghclient.PullRequest) error {
+		var out []store.PullRequest
+		for _, p := range page {
+			out = append(out, store.PullRequest{Number: p.Number, HeadRef: p.Head.Ref, BaseRef: p.Base.Ref, Fork: p.Fork(),
+				Merged: p.MergedAt != nil, UpdatedAt: p.UpdatedAt})
+			if p.State == "open" {
+				open = append(open, p.Number)
+			}
+			newest = max(newest, p.UpdatedAt)
+		}
+		return m.Store.SavePulls(ctx, r.ID, out)
+	})
+	if err != nil {
+		return fmt.Errorf("sync pull requests: %w", err)
+	}
+	for _, n := range open {
+		reviews, err := m.GH.Reviews(ctx, r.Owner, r.Name, n)
+		if err != nil {
+			return fmt.Errorf("sync reviews of #%d: %w", n, err)
+		}
+		var out []store.Review
+		for _, v := range reviews {
+			out = append(out, store.Review{ID: v.ID, Number: n, Author: v.User.Login, State: v.State, Body: v.Body, Commit: v.CommitID, SubmittedAt: v.SubmittedAt})
+		}
+		if err := m.Store.SetReviews(ctx, r.ID, n, out); err != nil {
+			return err
+		}
+	}
+	// The listing is newest first, so the cursor moves only once everything newer is saved.
+	if newest != since {
+		if err := m.Store.SetCursor(ctx, pullsCur, newest); err != nil {
+			return err
+		}
+	}
+	if since, err = m.Store.Cursor(ctx, commentsCur); err != nil {
+		return err
+	}
+	err = m.GH.ReviewCommentsSince(ctx, r.Owner, r.Name, back(since), func(page []ghclient.ReviewComment) error {
+		var out []store.ReviewComment
+		for _, c := range page {
+			n, err := strconv.Atoi(c.PullRequestURL[strings.LastIndex(c.PullRequestURL, "/")+1:])
+			if err != nil {
+				return fmt.Errorf("line comment %d: pull_request_url %q", c.ID, c.PullRequestURL)
+			}
+			line := 0
+			if l := cmp.Or(c.Line, c.OriginalLine); l != nil {
+				line = *l
+			}
+			out = append(out, store.ReviewComment{ID: c.ID, InReplyTo: c.InReplyTo, Number: n, Author: c.User.Login, Path: c.Path, Line: line,
+				Side: c.Side, Commit: c.OriginalCommitID, Body: c.Body, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt})
+			since = max(since, c.UpdatedAt)
+		}
+		return m.Store.SaveReviewComments(ctx, r.ID, commentsCur, since, out)
+	})
+	if err != nil {
+		return fmt.Errorf("sync line comments: %w", err)
+	}
+	return nil
 }
 
 // back moves a cursor a minute earlier. GitHub's listings can lag behind a write by seconds

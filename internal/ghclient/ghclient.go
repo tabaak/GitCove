@@ -34,8 +34,16 @@ type Client interface {
 	Branches(ctx context.Context, owner, repo string) ([]Branch, error)
 	// FindPR returns the number of a PR from head (a branch in the same repo) in any state, or 0.
 	FindPR(ctx context.Context, owner, repo, head string) (int, error)
-	// CreatePR opens a PR and returns its number.
-	CreatePR(ctx context.Context, owner, repo string, pr NewPR) (int, error)
+	// CreatePR opens a PR, as the App or as the holder of user token user, and returns its number.
+	CreatePR(ctx context.Context, owner, repo, user string, pr NewPR) (int, error)
+
+	PullsSince(ctx context.Context, owner, repo, since string, f func([]PullRequest) error) error
+	PR(ctx context.Context, owner, repo string, n int) (PullRequest, error)
+	Reviews(ctx context.Context, owner, repo string, n int) ([]Review, error)
+	ReviewCommentsSince(ctx context.Context, owner, repo, since string, f func([]ReviewComment) error) error
+	ReviewComments(ctx context.Context, owner, repo string, n int, reviewID int64, since string) ([]ReviewComment, error)
+	CreateReview(ctx context.Context, owner, repo string, n int, user string, in NewReview) (int64, error)
+	ReplyToComment(ctx context.Context, owner, repo string, n int, user string, parent int64, body string) (int64, error)
 
 	IssuesSince(ctx context.Context, owner, repo, since string, f func([]Issue) error) error
 	CommentsSince(ctx context.Context, owner, repo, since string, f func([]Comment) error) error
@@ -235,11 +243,11 @@ func (a *App) FindPR(ctx context.Context, owner, repo, head string) (int, error)
 	return prs[0].Number, nil
 }
 
-func (a *App) CreatePR(ctx context.Context, owner, repo string, pr NewPR) (int, error) {
+func (a *App) CreatePR(ctx context.Context, owner, repo, user string, pr NewPR) (int, error) {
 	var out struct {
 		Number int `json:"number"`
 	}
-	err := a.sendAs(ctx, "", "POST", fmt.Sprintf("%s/repos/%s/%s/pulls", a.API, owner, repo), pr, &out)
+	err := a.sendAs(ctx, user, "POST", fmt.Sprintf("%s/repos/%s/%s/pulls", a.API, owner, repo), pr, &out)
 	return out.Number, err
 }
 

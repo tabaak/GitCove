@@ -29,7 +29,14 @@ func (r *Replayer) locals(ctx context.Context, it store.Item) (map[string]int, s
 	if it.Kind != "issue" && strings.HasPrefix(it.Issue, "L-") {
 		refs = append(refs, it.Issue)
 	}
-	for _, text := range []string{it.Change.Title, it.Change.Body, it.Change.Value, it.Base} {
+	texts := []string{it.Change.Title, it.Change.Body, it.Change.Value, it.Base}
+	for _, c := range it.Change.Comments {
+		texts = append(texts, c.Body)
+	}
+	if why, err := r.waitsOnWork(ctx, it); err != nil || why != "" {
+		return nil, why, err
+	}
+	for _, text := range texts {
 		for _, m := range localRef.FindAllStringSubmatch(text, -1) {
 			if m[1] != it.Issue {
 				refs = append(refs, m[1])
@@ -75,10 +82,12 @@ func number(it store.Item, nums map[string]int) int {
 	return n
 }
 
-// Step is one queued change to an issue, for the plan: Waits says why it can't replay yet.
+// Step is one queued change to an issue, for the plan: Waits says why it can't replay yet, and
+// Duplicate names an issue or PR on GitHub that a new one looks like a re-filing of (design 8.8).
 type Step struct {
 	store.Item
-	Waits string
+	Waits     string
+	Duplicate string
 }
 
 // IssuePlan lists the queued changes to issues in replay order.
@@ -90,7 +99,11 @@ func (r *Replayer) IssuePlan(ctx context.Context) ([]Step, error) {
 		if err != nil {
 			return nil, err
 		}
-		steps = append(steps, Step{it, why})
+		dup, err := r.duplicate(ctx, it)
+		if err != nil {
+			return nil, err
+		}
+		steps = append(steps, Step{it, why, dup})
 	}
 	return steps, err
 }
@@ -135,9 +148,17 @@ func (r *Replayer) replayItem(ctx context.Context, repo store.Repo, it store.Ite
 	}
 	action := "post"
 	switch it.Kind {
+	case "merge":
+		if done, err := r.checkMerge(ctx, repo, it, nums); done || err != nil {
+			return err
+		}
 	case "label":
 		action = "apply" // one change, never the whole set; repeating it is harmless
 	case "state", "edit":
+		if it.Change.Via != "" {
+			return r.Store.Finish(ctx, []int64{it.ID}, "done", "closed on GitCove by merging "+it.Change.Via+
+				"; GitHub closes it when that PR is merged there", "", "")
+		}
 		// Decided against GitHub's current version, not the mirror's (R5). Setting a value is
 		// harmless to repeat, so an apply interrupted by a crash is simply decided again.
 		gh, err := r.GH.Issue(ctx, repo.Owner, repo.Name, number(it, nums))
@@ -165,6 +186,21 @@ func (r *Replayer) replayItem(ctx context.Context, repo store.Repo, it store.Ite
 	poster, tok, err := r.Users.Token(ctx, it.TokenID)
 	if err != nil {
 		return err
+	}
+	switch it.Kind {
+	case "review":
+		if action, err = r.reviewAction(ctx, repo, it, nums, poster); err != nil {
+			return err
+		}
+	case "reply":
+		id, err := r.parentID(ctx, it)
+		if err != nil {
+			return err
+		}
+		action = "reply"
+		if id == 0 {
+			action = "comment" // the parent never became a line comment on GitHub
+		}
 	}
 	return r.send(ctx, repo, it, nums, action, poster, tok)
 }
@@ -203,7 +239,15 @@ func (r *Replayer) send(ctx context.Context, repo store.Repo, it store.Item, num
 				return err
 			}
 		}
+		if action == "approve" {
+			action = "review" // only the person's own token may approve (R7)
+		}
 		return r.send(ctx, repo, it, nums, action, "", "")
+	case refused(err) && (se.Status == 422 && (action == "review" || action == "approve") || se.Status == 404 && action == "reply"):
+		// Refused, so nothing was posted: the commit isn't part of the PR on GitHub, the PR moved
+		// on under an approval, or the reply's parent is gone. It goes up as an ordinary comment
+		// that quotes what it was about (design 8.13).
+		return r.send(ctx, repo, it, nums, "comment", poster, tok)
 	case refused(err) && se.Status == 404 && it.Kind == "label" && !it.Change.Add:
 		// The label is already off.
 	case refused(err):
@@ -216,15 +260,29 @@ func (r *Replayer) send(ctx context.Context, repo store.Repo, it store.Item, num
 	if err := r.kill("sent"); err != nil {
 		return err
 	}
-	return r.finish(ctx, it, n, id)
+	return r.finish(ctx, repo, it, nums, n, id)
 }
 
-func (r *Replayer) finish(ctx context.Context, it store.Item, n int, id int64) error {
+func (r *Replayer) finish(ctx context.Context, repo store.Repo, it store.Item, nums map[string]int, n int, id int64) error {
 	if it.Kind == "issue" {
 		return r.Store.FinishIssue(ctx, it, n)
 	}
 	result := "applied"
 	switch {
+	case it.Kind == "review" && it.Target != "comment":
+		if err := r.mapComments(ctx, repo, it, nums, id); err != nil {
+			return err
+		}
+		result = fmt.Sprintf("review %d", id)
+		if it.Target == "approve" {
+			result += ", " + it.Change.Verdict + " applied"
+		}
+	case it.Kind == "reply" && it.Target == "reply":
+		result = fmt.Sprintf("reply %d", id)
+	case it.Kind == "review" || it.Kind == "reply":
+		result = fmt.Sprintf("posted as an ordinary comment (%d), because GitHub couldn't attach it to the lines", id)
+	case it.Kind == "merge":
+		result = fmt.Sprintf("noted on the PR (comment %d); a person merges it on GitHub", id)
 	case it.Target == "note":
 		result = fmt.Sprintf("GitHub had changed it too, so GitHub's was kept and a note posted (comment %d)", id)
 	case it.Kind == "comment":
@@ -240,6 +298,44 @@ func (r *Replayer) finish(ctx context.Context, it store.Item, n int, id int64) e
 func (r *Replayer) write(ctx context.Context, repo store.Repo, it store.Item, nums map[string]int, tok string) (int, int64, error) {
 	o, name, n, c := repo.Owner, repo.Name, number(it, nums), it.Change
 	switch {
+	case it.Kind == "issue" && c.Head != "":
+		head, _, err := r.Store.PushedHead(ctx, it.RepoID, c.Head)
+		if err != nil {
+			return 0, 0, err
+		}
+		num, err := r.GH.CreatePR(ctx, o, name, tok, ghclient.NewPR{Title: rewrite(c.Title, nums), Head: head, Base: c.Base, Body: text(it, c.Body, nums, tok != "")})
+		return num, 0, err
+	case it.Kind == "review" && it.Target != "comment":
+		in := ghclient.NewReview{CommitID: c.Commit, Event: "COMMENT", Body: text(it, reviewBody(it, false), nums, tok != "")}
+		if it.Target == "approve" {
+			in.Event = map[string]string{"approve": "APPROVE", "request_changes": "REQUEST_CHANGES"}[c.Verdict]
+		}
+		for _, lc := range c.Comments {
+			in.Comments = append(in.Comments, ghclient.LineComment{Path: lc.Path, Line: lc.Line, Side: lc.Side, Body: lineBody(it, lc, nums, tok != "")})
+		}
+		id, err := r.GH.CreateReview(ctx, o, name, n, tok, in)
+		return 0, id, err
+	case it.Kind == "review":
+		id, err := r.GH.CreateComment(ctx, o, name, n, tok, text(it, reviewBody(it, true), nums, tok != ""))
+		return 0, id, err
+	case it.Kind == "reply":
+		parent, err := r.parentID(ctx, it)
+		if err != nil {
+			return 0, 0, err
+		}
+		if it.Target == "reply" {
+			id, err := r.GH.ReplyToComment(ctx, o, name, n, tok, parent, text(it, c.Body, nums, tok != ""))
+			return 0, id, err
+		}
+		quoted, err := r.quoteParent(ctx, it)
+		if err != nil {
+			return 0, 0, err
+		}
+		id, err := r.GH.CreateComment(ctx, o, name, n, tok, text(it, quoted+c.Body, nums, tok != ""))
+		return 0, id, err
+	case it.Kind == "merge":
+		id, err := r.GH.CreateComment(ctx, o, name, n, tok, text(it, c.Body, nums, tok != ""))
+		return 0, id, err
 	case it.Kind == "issue":
 		num, err := r.GH.CreateIssue(ctx, o, name, tok, ghclient.NewIssue{Title: rewrite(c.Title, nums), Body: text(it, c.Body, nums, tok != ""), Labels: c.Labels})
 		return num, 0, err
@@ -323,7 +419,7 @@ func (r *Replayer) recoverItem(ctx context.Context, repo store.Repo, it store.It
 			return err
 		}
 		if n != 0 || id != 0 {
-			return r.finish(ctx, it, n, id)
+			return r.finish(ctx, repo, it, nums, n, id)
 		}
 	}
 	return r.Store.Finish(ctx, []int64{it.ID}, "uncertain", fmt.Sprintf("GitHub didn't confirm it, and its marker wasn't found "+
@@ -346,6 +442,24 @@ func (r *Replayer) findMarker(ctx context.Context, repo store.Repo, it store.Ite
 		for _, i := range issues {
 			if strings.Contains(i.Body, mark) {
 				return i.Number, 0, nil
+			}
+		}
+		return 0, 0, err
+	}
+	switch {
+	case it.Kind == "review" && it.Target != "comment":
+		reviews, err := r.GH.Reviews(ctx, repo.Owner, repo.Name, number(it, nums))
+		for _, v := range reviews {
+			if strings.Contains(v.Body, mark) {
+				return 0, v.ID, nil
+			}
+		}
+		return 0, 0, err
+	case it.Kind == "reply" && it.Target == "reply":
+		replies, err := r.GH.ReviewComments(ctx, repo.Owner, repo.Name, number(it, nums), 0, since)
+		for _, c := range replies {
+			if strings.Contains(c.Body, mark) {
+				return 0, c.ID, nil
 			}
 		}
 		return 0, 0, err

@@ -23,7 +23,7 @@ import (
 //go:embed templates.html
 var templateFS embed.FS
 
-var tmpl = template.Must(template.New("").Funcs(template.FuncMap{"when": when}).ParseFS(templateFS, "templates.html"))
+var tmpl = template.Must(template.New("").Funcs(template.FuncMap{"when": when, "dict": dict}).ParseFS(templateFS, "templates.html"))
 
 // when shows an RFC 3339 timestamp as "2 Jan 2026, 15:04 UTC", or as given if it doesn't parse.
 func when(s string) string {
@@ -32,6 +32,15 @@ func when(s string) string {
 		return s
 	}
 	return t.UTC().Format("2 Jan 2006, 15:04 UTC")
+}
+
+// dict builds a map from pairs, to pass a sub-template more than one value.
+func dict(kv ...any) map[string]any {
+	m := map[string]any{}
+	for i := 0; i+1 < len(kv); i += 2 {
+		m[kv[i].(string)] = kv[i+1]
+	}
+	return m
 }
 
 const cookieName = "cove_token"
@@ -217,6 +226,7 @@ type thread struct {
 	Labels, AddLabels         []string
 	Posts                     []post
 	Queued                    []string
+	PR                        *prView // nil for an issue
 }
 
 // thread builds the issue page for ref. It returns the GitHub number instead if ref is a new
@@ -244,7 +254,11 @@ func (s *Server) thread(r *http.Request, p *page, ref string) (thread, int, erro
 				c := it.Change
 				th.Title, th.Body, th.State, th.Author, th.At, th.Labels = c.Title, c.Body, "open", c.Author, it.Created, slices.Clone(c.Labels)
 				th.Local, th.EditableBody = true, it.State == "pending"
-				th.Queued = append(th.Queued, "new issue, "+status(it.State))
+				what := "new issue, "
+				if c.Head != "" {
+					th.IsPR, th.PR, what = true, &prView{Head: c.Head, Base: c.Base}, "new pull request, "
+				}
+				th.Queued = append(th.Queued, what+status(it.State))
 			}
 		}
 	} else {
@@ -298,6 +312,10 @@ func (s *Server) thread(r *http.Request, p *page, ref string) (thread, int, erro
 				slices.Contains(baseLabels, c.Label) == c.Add)
 		case "state":
 			th.State = c.State
+			if c.Via != "" {
+				note("state", fmt.Sprintf("closed by merging %s on GitCove", c.Via), false)
+				continue
+			}
 			note("state", fmt.Sprintf("%s by %s, %s", map[string]string{"open": "reopened", "closed": "closed"}[c.State], c.Author, badge), c.State == baseState)
 		case "edit":
 			if c.Field == "title" {
@@ -311,6 +329,11 @@ func (s *Server) thread(r *http.Request, p *page, ref string) (thread, int, erro
 	for _, k := range order {
 		if d, ok := net[k]; ok {
 			th.Queued = append(th.Queued, d)
+		}
+	}
+	if th.IsPR {
+		if err := s.fillPR(ctx, p, &th, items); err != nil {
+			return th, 0, err
 		}
 	}
 	labels, err := s.Store.Labels(ctx, p.Repo.ID)
@@ -419,6 +442,27 @@ func (s *Server) act(w http.ResponseWriter, r *http.Request, p *page) error {
 			return badRequest("no such label to add or remove: " + c.Label)
 		}
 		kinds, changes = append(kinds, "label"), append(changes, c)
+	case "review":
+		if c, err = s.review(r, p, th); err != nil {
+			return err
+		}
+		kinds, changes = append(kinds, "review"), append(changes, c)
+	case "reply":
+		if c.Body, err = text(r, "body", true, maxBody); err != nil {
+			return err
+		}
+		c.Parent = r.FormValue("parent")
+		if th.PR == nil || !slices.ContainsFunc(th.PR.Threads, func(t lineThread) bool { return t.Parent == c.Parent }) {
+			return badRequest("no such line comment to reply to")
+		}
+		kinds, changes = append(kinds, "reply"), append(changes, c)
+	case "merge":
+		if p.Mode != store.Failover {
+			return store.ErrWrongMode
+		}
+		if err := s.merge(r, p, th); err != nil {
+			return err
+		}
 	case "edit":
 		title, err := text(r, "title", true, 256)
 		if err != nil {

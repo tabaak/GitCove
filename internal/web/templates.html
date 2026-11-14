@@ -31,11 +31,16 @@
   .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
   .actions form { margin: 0; }
   fieldset { border: 1px solid var(--line); border-radius: 6px; margin: 12px 0; }
+  .diff { font: 13px/1.5 ui-monospace, monospace; border: 1px solid var(--line); border-radius: 6px; margin: 12px 0; overflow-x: auto; }
+  .diff td { padding: 0 8px; border: 0; white-space: pre; width: auto; }
+  .diff td.n { color: var(--muted); text-align: right; user-select: none; width: 1%; }
+  .diff tr.add { background: #2da44e33; } .diff tr.del { background: #cf222e33; } .diff tr.hunk { background: var(--subtle); color: var(--muted); }
+  .diff details { margin: 0; } .diff summary { cursor: pointer; color: var(--accent); } .diff textarea { min-height: 60px; width: 60ch; }
 </style>
 </head>
 <body>
 <header>
-  <nav><a href="/"><strong>GitCove</strong></a>{{if .Repo.Name}} / <a href="/{{.Repo.FullName}}/issues">{{.Repo.FullName}}</a>{{end}}</nav>
+  <nav><a href="/"><strong>GitCove</strong></a>{{if .Repo.Name}} / <a href="/{{.Repo.FullName}}/issues">{{.Repo.FullName}}</a> · <a href="/{{.Repo.FullName}}/branches">branches</a>{{end}}</nav>
   {{if .User.Name}}<div class="actions"><span class="muted">{{.User.Name}}</span><form method="post" action="/logout"><button>Sign out</button></form></div>{{end}}
 </header>
 {{if .User.Name}}
@@ -71,7 +76,8 @@
   {{$s := .Data.State}}{{if eq $s "open"}}<strong>open</strong>{{else}}<a href="?state=open">open</a>{{end}} ·
   {{if eq $s "closed"}}<strong>closed</strong>{{else}}<a href="?state=closed">closed</a>{{end}} ·
   {{if eq $s "all"}}<strong>all</strong>{{else}}<a href="?state=all">all</a>{{end}}</span>
-  {{if .Writable}}<a class="button" href="/{{.Repo.FullName}}/issues/new">New issue</a>{{end}}
+  {{if .Writable}}<span><a class="button" href="/{{.Repo.FullName}}/issues/new">New issue</a>
+    <a class="button" href="/{{.Repo.FullName}}/branches">New pull request</a></span>{{end}}
 </div>
 <table>
 {{range .Data.Rows}}
@@ -104,6 +110,20 @@
   <span class="badge">{{.State}}</span>{{if .IsPR}}<span class="badge">pull request</span>{{end}}
   {{range .Labels}}<span class="badge">{{.}}</span>{{end}}
 </p>
+{{with .PR}}
+<p><code>{{.Head}}</code> into <code>{{.Base}}</code>{{if .Fork}} <span class="badge">from a fork</span>{{end}}
+  {{if .HeadSHA}} · <a href="/{{$.Repo.FullName}}/issues/{{$.Data.Ref}}/files">Files changed{{if $.Writable}} and review{{end}}</a>{{end}}</p>
+{{if .MergedLocal}}<p><span class="badge">{{.MergedLocal}}</span>
+  {{if not .Merged}}<span class="badge">{{if $.Data.Local}}not on GitHub yet{{else}}{{$.Data.State}} on GitHub as #{{$.Data.Ref}}, not merged there{{end}}</span>{{end}}</p>{{end}}
+{{if .Approvals}}<p>Approved by {{range $i, $a := .Approvals}}{{if $i}}, {{end}}{{$a}}{{end}}
+  <span class="badge">approved on GitCove, not checked by GitHub</span></p>{{end}}
+{{if $.Writable}}
+  {{if .Mergeable}}<form method="post" action="/{{$.Repo.FullName}}/issues/{{$.Data.Ref}}/merge">
+    <button>Merge into {{.Base}} on GitCove</button>
+    <span class="muted">A merge commit on GitCove only. GitHub's checks aren't run or required here; on GitHub it arrives as this PR, for a person to merge.</span></form>
+  {{else}}<p class="muted">Can't be merged on GitCove: {{.Why}}.</p>{{end}}
+{{end}}
+{{end}}
 {{if .Queued}}<p class="muted">Queued for GitHub: {{range $i, $q := .Queued}}{{if $i}}; {{end}}{{$q}}{{end}}.</p>{{end}}
 <div class="post"><div class="muted"><strong>{{.Author}}</strong> · {{when .At}}</div><div class="text">{{.Body}}</div></div>
 {{if and $.Writable .EditableBody}}
@@ -119,6 +139,18 @@
 {{range .Posts}}
 <div class="post"><div class="muted"><strong>{{.Author}}</strong> · {{when .At}}{{if .Badge}}<span class="badge">{{.Badge}}</span>{{end}}</div><div class="text">{{.Body}}</div></div>
 {{end}}
+{{with .PR}}
+{{range .Reviews}}
+<div class="post"><div class="muted"><strong>{{.Author}}</strong>{{if .Verdict}} {{.Verdict}}{{else}} reviewed{{end}} · {{when .At}} · commit <code>{{printf "%.8s" .Commit}}</code>{{if .Badge}}<span class="badge">{{.Badge}}</span>{{end}}</div>{{if .Body}}<div class="text">{{.Body}}</div>{{end}}</div>
+{{end}}
+{{range .Threads}}
+<div class="post"><div class="muted"><code>{{.Path}}</code>{{if .Line}} line {{.Line}}{{end}}</div>
+  {{range .Posts}}<div><span class="muted"><strong>{{.Author}}</strong> · {{when .At}}{{if .Badge}}<span class="badge">{{.Badge}}</span>{{end}}</span><div class="text">{{.Body}}</div></div>{{end}}
+  {{if $.Writable}}<div><details><summary>Reply</summary><form method="post" action="/{{$.Repo.FullName}}/issues/{{$.Data.Ref}}/reply">
+    <input type="hidden" name="parent" value="{{.Parent}}"><p><textarea name="body" required></textarea></p><button>Queue reply</button></form></details></div>{{end}}
+</div>
+{{end}}
+{{end}}
 {{if $.Writable}}
 {{if or .Labels .AddLabels}}<div class="actions"><span class="muted">Labels:</span>
   {{range .Labels}}<form method="post" action="/{{$.Repo.FullName}}/issues/{{$.Data.Ref}}/label">
@@ -129,10 +161,72 @@
 <form method="post" action="/{{$.Repo.FullName}}/issues/{{.Ref}}/comment">
   <p><textarea name="body" required placeholder="Comment"></textarea></p>
   <div class="actions"><button>Queue comment</button>
-    <button form="state" title="Queues the change for GitHub">{{if eq .State "open"}}Close issue{{else}}Reopen issue{{end}}</button></div>
+    {{if not (and .PR (or .PR.Merged .PR.MergedLocal))}}<button form="state" title="Queues the change for GitHub">{{if eq .State "open"}}Close{{else}}Reopen{{end}}</button>{{end}}</div>
 </form>
 <form id="state" method="post" action="/{{$.Repo.FullName}}/issues/{{.Ref}}/state">
   <input type="hidden" name="state" value="{{if eq .State "open"}}closed{{else}}open{{end}}">
 </form>
 {{end}}
+{{end}}{{template "foot"}}{{end}}
+
+{{define "diff"}}
+{{if .Diff.Truncated}}<p class="muted">The diff is too long to show in full. See the rest with <code>git diff</code>.</p>{{end}}
+{{range .Diff.Files}}
+<h3><code>{{.Path}}</code></h3>
+<table class="diff">
+{{range .Lines}}<tr class="{{if eq .Kind "+"}}add{{else if eq .Kind "-"}}del{{else if eq .Kind "@"}}hunk{{end}}">
+  <td class="n">{{if .Old}}{{.Old}}{{end}}</td><td class="n">{{if .New}}{{.New}}{{end}}</td>
+  <td>{{if ne .Kind "@"}}{{.Kind}}{{end}}{{.Text}}{{if and $.Comment .Field}}<details><summary>comment</summary><textarea name="{{.Field}}" aria-label="Comment on {{if .New}}line {{.New}}{{else}}removed line {{.Old}}{{end}}"></textarea></details>{{end}}</td>
+</tr>{{end}}
+</table>
+{{else}}<p class="muted">No changes.</p>
+{{end}}
+{{end}}
+
+{{define "branches"}}{{template "head" .}}
+<h1>Branches</h1>
+<p class="muted">As GitCove serves them: GitHub's, plus what was pushed or merged here during an outage.</p>
+<table>
+{{range .Data}}
+  <tr><td><code>{{.Name}}</code></td>
+    <td>{{.Subject}} <span class="muted"><code>{{printf "%.8s" .Commit}}</code> · {{when .When}}</span></td>
+    <td>{{if ne .Name $.Repo.DefaultBranch}}<a href="/{{$.Repo.FullName}}/compare?head={{.Name}}">compare with {{$.Repo.DefaultBranch}}</a>{{end}}</td></tr>
+{{else}}<tr><td class="muted">No branches yet.</td></tr>
+{{end}}
+</table>
+{{template "foot"}}{{end}}
+
+{{define "compare"}}{{template "head" .}}
+<h1><code>{{.Data.Head}}</code> <span class="muted">compared with</span> <code>{{.Data.Base}}</code></h1>
+{{if and .Writable .Data.Diff.Files}}
+<details><summary>Open a pull request</summary>
+<form method="post" action="/{{.Repo.FullName}}/pulls">
+  <input type="hidden" name="head" value="{{.Data.Head}}"><input type="hidden" name="base" value="{{.Data.Base}}">
+  <p><label>Title<br><input type="text" name="title" required maxlength="256"></label></p>
+  <p><label>Description<br><textarea name="body"></textarea></label></p>
+  <p class="muted">It gets a temporary number such as L-3 until replay opens it on GitHub. "Fixes #12" or "Fixes #L-2" closes that issue when the PR is merged.</p>
+  <button>Queue pull request</button>
+</form>
+</details>
+{{end}}
+{{template "diff" dict "Diff" .Data.Diff "Comment" false}}
+{{template "foot"}}{{end}}
+
+{{define "files"}}{{template "head" .}}{{with .Data}}
+<h1><a href="/{{$.Repo.FullName}}/issues/{{.Ref}}">{{.Title}}</a> <span class="muted">{{if .Local}}{{.Ref}}{{else}}#{{.Ref}}{{end}}</span></h1>
+<p><code>{{.PR.Head}}</code> into <code>{{.PR.Base}}</code> · commit <code>{{printf "%.12s" .PR.HeadSHA}}</code></p>
+{{if $.Writable}}
+<form method="post" action="/{{$.Repo.FullName}}/issues/{{.Ref}}/review">
+<input type="hidden" name="commit" value="{{.PR.HeadSHA}}">
+{{template "diff" dict "Diff" .Diff "Comment" true}}
+<fieldset><legend>Review</legend>
+  <p><textarea name="body" placeholder="Summary"></textarea></p>
+  <p><label><input type="radio" name="verdict" value="comment" checked> Comment</label>
+  {{if not .PR.Author}}<label><input type="radio" name="verdict" value="approve"> Approve</label>
+  <label><input type="radio" name="verdict" value="request_changes"> Request changes</label>{{end}}</p>
+  <p class="muted">Your review is tied to this commit. An approval reaches GitHub as yours only if you authorised GitCove and the PR is still at this commit; otherwise it is posted as a comment saying so.</p>
+  <button>Queue review</button>
+</fieldset>
+</form>
+{{else}}{{template "diff" dict "Diff" .Diff "Comment" false}}{{end}}
 {{end}}{{template "foot"}}{{end}}
