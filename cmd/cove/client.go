@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -13,12 +14,14 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	"github.com/tabaak/gitcove/internal/store"
 )
@@ -253,10 +256,21 @@ func installAgent() error {
 		cmds = [][]string{{"systemctl", "--user", "daemon-reload"}, {"systemctl", "--user", "enable", "cove-agent"},
 			{"systemctl", "--user", "restart", "cove-agent"}}
 	case "windows":
-		// shortcut: schtasks can't set restart-on-failure, so an agent that dies is back only at the
-		// next login; register the task from XML if that matters.
+		u, err := user.Current()
+		if err != nil {
+			return err
+		}
+		f, err := os.CreateTemp("", "cove-agent-*.xml")
+		if err != nil {
+			return err
+		}
+		defer os.Remove(f.Name())
+		_, err = f.Write(utf16LE(taskXML(exe, u.Username)))
+		if err := errors.Join(err, f.Close()); err != nil {
+			return err
+		}
 		cmds = [][]string{{"schtasks", "/end", "/tn", "GitCoveAgent"},
-			{"schtasks", "/create", "/f", "/sc", "onlogon", "/tn", "GitCoveAgent", "/tr", `"` + exe + `" client agent`},
+			{"schtasks", "/create", "/f", "/tn", "GitCoveAgent", "/xml", f.Name()},
 			{"schtasks", "/run", "/tn", "GitCoveAgent"}}
 	default:
 		return fmt.Errorf("no service manager known for %s", runtime.GOOS)
@@ -276,6 +290,52 @@ func installAgent() error {
 		}
 	}
 	return nil
+}
+
+// taskXML is the agent's Task Scheduler task: at account's logon only, as account without admin
+// rights, on battery too, with no time limit. The trigger repeats every minute and a running copy
+// makes Task Scheduler skip it, so an agent that dies is back within a minute (RestartOnFailure
+// only covers a task that fails to start). conhost --headless gives the agent a console with no
+// window, so there is nothing to see or close, and git and PowerShell inherit it.
+func taskXML(exe, account string) string {
+	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Triggers>
+    <LogonTrigger>
+      <UserId>%[2]s</UserId>
+      <Repetition><Interval>PT1M</Interval></Repetition>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>%[2]s</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>conhost.exe</Command>
+      <Arguments>--headless "%[1]s" client agent</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+`, html.EscapeString(exe), html.EscapeString(account))
+}
+
+// utf16LE encodes s as UTF-16 with a byte-order mark, as schtasks /xml expects.
+func utf16LE(s string) []byte {
+	b := []byte{0xFF, 0xFE}
+	for _, r := range utf16.Encode([]rune(s)) {
+		b = binary.LittleEndian.AppendUint16(b, r)
+	}
+	return b
 }
 
 // coveRequest makes a POST to GitCove with the developer's token from Git's credential helper.
