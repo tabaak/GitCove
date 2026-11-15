@@ -160,7 +160,9 @@ Once, while things are normal (Git needs a credential helper, such as `osxkeycha
 COVE_TOKEN=<token> cove client setup -url https://gitcove.example.com -org my-org
 ```
 
-This also installs the agent: a launchd agent on macOS (`~/Library/LaunchAgents/dev.gitcove.agent.plist`, log in `~/Library/Logs/cove-agent.log`) or a systemd user service on Linux (`cove-agent`). Every 30 seconds it asks GitCove's `/status` for the mode. In failover or degraded mode (paused or not) it sends Git for `github.com/my-org/...` (HTTPS and SSH URLs) to GitCove, so existing clones work unchanged. Otherwise it sends it back to GitHub. It acts only when the mode changes, so a switch you make by hand holds until the next one. Every switch shows a system notification (`osascript` on macOS, `notify-send` on Linux). If it can't reach GitCove, it changes nothing.
+This also installs the agent: a launchd agent on macOS (`~/Library/LaunchAgents/dev.gitcove.agent.plist`, log in `~/Library/Logs/cove-agent.log`) a systemd user service on Linux (`cove-agent`), or a Task Scheduler task on Windows (`GitCoveAgent`, experimental, untested on a real machine). Every 30 seconds it asks GitCove's `/status` for the mode. In failover or degraded mode (paused or not) it sends Git for `github.com/my-org/...` (HTTPS and SSH URLs) to GitCove, so existing clones work unchanged. Otherwise it sends it back to GitHub. It acts only when the mode changes, so a switch you make by hand holds until the next one. Every switch shows a system notification (`osascript` on macOS, `notify-send` on Linux, a PowerShell toast on Windows). If it can't reach GitCove, it changes nothing.
+
+On Windows the task doesn't restart the agent if it dies; it starts again at the next login. To remove it: `schtasks /delete /tn GitCoveAgent /f`.
 
 Without the agent (`-agent=false`, or another OS), switch by hand:
 

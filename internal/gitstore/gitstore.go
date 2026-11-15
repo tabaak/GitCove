@@ -19,7 +19,6 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -218,9 +217,7 @@ func (s *Store) runIn(ctx context.Context, dir string, env []string, stdin io.Re
 	if stdin != nil {
 		cmd.Stdin = stdin
 	}
-	// Kill git's helpers too (git-remote-https holds the network connection), not only git itself.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	killGroup(cmd)
 	cmd.WaitDelay = 5 * time.Second
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr

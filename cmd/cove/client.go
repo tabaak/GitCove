@@ -183,6 +183,16 @@ func notify(msg string) {
 		c = exec.Command("osascript", "-e", "on run argv", "-e", `display notification (item 1 of argv) with title "GitCove"`, "-e", "end run", msg)
 	case "linux":
 		c = exec.Command("notify-send", "GitCove", msg)
+	case "windows":
+		// A toast under PowerShell's own app ID, which every Windows registers; msg goes in through
+		// the environment so it is never parsed as script or XML.
+		c = exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", `$m = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+$x = $m::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
+$t = $x.GetElementsByTagName('text')
+$null = $t[0].AppendChild($x.CreateTextNode('GitCove'))
+$null = $t[1].AppendChild($x.CreateTextNode($env:COVE_NOTE))
+$m::CreateToastNotifier('{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe').Show([Windows.UI.Notifications.ToastNotification]::new($x))`)
+		c.Env = append(os.Environ(), "COVE_NOTE="+msg)
 	default:
 		return
 	}
@@ -205,7 +215,7 @@ func remoteMode(hc *http.Client, base string) (string, error) {
 }
 
 // installAgent runs `cove client agent` at login: a launchd agent on macOS, a systemd user
-// service on Linux.
+// service on Linux, a Task Scheduler task on Windows.
 func installAgent() error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -242,18 +252,26 @@ func installAgent() error {
 			"[Service]\nExecStart=%q client agent\nRestart=always\n\n[Install]\nWantedBy=default.target\n", exe)
 		cmds = [][]string{{"systemctl", "--user", "daemon-reload"}, {"systemctl", "--user", "enable", "cove-agent"},
 			{"systemctl", "--user", "restart", "cove-agent"}}
+	case "windows":
+		// shortcut: schtasks can't set restart-on-failure, so an agent that dies is back only at the
+		// next login; register the task from XML if that matters.
+		cmds = [][]string{{"schtasks", "/end", "/tn", "GitCoveAgent"},
+			{"schtasks", "/create", "/f", "/sc", "onlogon", "/tn", "GitCoveAgent", "/tr", `"` + exe + `" client agent`},
+			{"schtasks", "/run", "/tn", "GitCoveAgent"}}
 	default:
 		return fmt.Errorf("no service manager known for %s", runtime.GOOS)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		return err
+	if path != "" { // Windows keeps the task in Task Scheduler, not in a file
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			return err
+		}
 	}
 	for i, c := range cmds {
 		out, err := exec.Command(c[0], c[1:]...).CombinedOutput()
-		if err != nil && (runtime.GOOS != "darwin" || i != 0) { // bootout fails when it wasn't running yet
+		if err != nil && (runtime.GOOS == "linux" || i != 0) { // bootout and /end fail when it wasn't running yet
 			return fmt.Errorf("%s: %v: %s", strings.Join(c, " "), err, out)
 		}
 	}

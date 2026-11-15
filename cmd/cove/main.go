@@ -55,7 +55,7 @@ const usage = `usage: cove <command>
 
   client setup -url URL -org ORG [-agent=false]
                                            on a developer machine: save GitCove's address and token (COVE_TOKEN or stdin),
-                                           and install the agent as a launchd or systemd user service
+                                           and install the agent (launchd, systemd user service, or Task Scheduler on Windows)
   client on | client off                   send Git for the organisation to GitCove, or back to GitHub, by hand
   client agent [-every 30s]                what setup installs: switches Git to GitCove in failover and degraded mode, and back
   client authorise                         while GitHub is up: let GitCove post your outage work under your GitHub name
