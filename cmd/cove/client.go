@@ -27,7 +27,7 @@ import (
 )
 
 // clientCmd sets up a developer machine. It only touches the developer's global Git config:
-// cove.url and cove.org, the token in Git's credential helper, and the url.insteadOf rule; and
+// cove.url, cove.org and cove.notify, the token in Git's credential helper, and the url.insteadOf rule; and
 // the agent's service file.
 func clientCmd(args []string) error {
 	if len(args) == 0 {
@@ -39,6 +39,7 @@ func clientCmd(args []string) error {
 		base := fs.String("url", "", "GitCove's address, e.g. https://gitcove.example.com")
 		org := fs.String("org", "", "the GitHub organisation GitCove mirrors")
 		withAgent := fs.Bool("agent", true, "install the agent, which switches Git to GitCove and back by itself")
+		notifyOn := fs.Bool("notify", false, "have the agent show a system notification when it switches Git")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -65,6 +66,7 @@ func clientCmd(args []string) error {
 		for _, c := range [][]string{
 			{"config", "--global", "cove.url", strings.TrimSuffix(*base, "/")},
 			{"config", "--global", "cove.org", *org},
+			{"config", "--global", "--bool", "cove.notify", strconv.FormatBool(*notifyOn)},
 		} {
 			if _, err := gitOut(c...); err != nil {
 				return err
@@ -140,7 +142,8 @@ func setRule(base, org string, on bool) error {
 }
 
 // agent asks GitCove for its mode every interval, and turns the rule on in the modes that take
-// writes (failover and degraded, paused or not) and off otherwise, with a system notification. It
+// writes (failover and degraded, paused or not) and off otherwise, with a system notification if
+// setup was given -notify (the team hears of switches from GitCove's channel and pushes). It
 // acts only when that answer changes, so `cove client on` or `off` by hand holds until the next
 // switch. If GitCove can't be reached it changes nothing: a developer keeps working where they
 // were rather than being split from the team by a network blip. Only one runs per user: a second
@@ -166,6 +169,7 @@ func agent(every time.Duration) error {
 	if err != nil {
 		return err
 	}
+	notifyOn, _ := gitOut("config", "--global", "--bool", "--get", "cove.notify")
 	hc := &http.Client{Timeout: 10 * time.Second}
 	applied, unreachable := "", false
 	for ; ; time.Sleep(every) {
@@ -188,7 +192,7 @@ func agent(every time.Duration) error {
 		}
 		msg := fmt.Sprintf("GitCove is in %s mode: Git for %s goes to %s", mode, org, map[string]string{"on": base, "off": "GitHub"}[want])
 		log.Print(msg)
-		if applied != "" || want == "on" { // not on every login while GitHub is fine
+		if notifyOn == "true" && (applied != "" || want == "on") { // not on every login while GitHub is fine
 			notify(msg)
 		}
 		applied = want

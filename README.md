@@ -35,7 +35,7 @@ Put TLS in front of it, for example with Caddy. Developers send their token as a
 | `COVE_HEALTH_INTERVAL` | `30s` | Time between GitHub health probes |
 | `COVE_FETCH_TIMEOUT` | `10m` | Longest time a single repo fetch or replay push may take |
 | `COVE_REPLAY_INTERVAL` | `30s` | Time between replay passes while replaying |
-| `COVE_ALERT_WEBHOOK` | unset | URL that admin alerts are POSTed to as `{"text": ...}` (Slack-style). Alerts always go to the log too |
+| `COVE_ALERT_WEBHOOK` | unset | URL that admin alerts and mode-switch announcements are POSTed to as `{"text": ...}` (Slack-style). They always go to the log too |
 | `COVE_APP_CLIENT_ID` | unset | The App's client ID. With the next two, lets people post their outage work under their own names (see below) |
 | `COVE_APP_CLIENT_SECRET_FILE` | unset | Path to a file holding the App's client secret |
 | `COVE_USER_KEY_FILE` | unset | Path to the key that encrypts people's GitHub tokens: 64 hex digits, e.g. from `openssl rand -hex 32`. Keep it off the data volume |
@@ -74,7 +74,7 @@ cove branch list
 cove repo pr-only my-org/api off          # for repos with no push-based deploys
 ```
 
-The mode (normal, failover, reconciling, replaying, degraded, degraded-paused) lives in the database, so it survives a restart, and every change is written to the audit log. So are the emergency setting, branch marks, the PR-only setting, and skips and retries. `GET /status` shows the mode.
+The mode (normal, failover, reconciling, replaying, degraded, degraded-paused) lives in the database, so it survives a restart, and every change is written to the audit log. `failover start` and `end` and `degraded start`, `pause` and `stop` also post one message to `COVE_ALERT_WEBHOOK` saying what changed and what developers should expect, e.g. "GitCove: failover started. GitHub is down, so Git goes to GitCove: the agent switches you, or run `cove client on`. Pushes are saved and sent to GitHub when it's back; default-branch work arrives as a PR." So are the emergency setting, branch marks, the PR-only setting, and skips and retries. `GET /status` shows the mode.
 
 **During failover** GitCove accepts pushes to branches. It refuses:
 
@@ -85,7 +85,7 @@ The mode (normal, failover, reconciling, replaying, degraded, degraded-paused) l
 
 A branch is protected if GitHub's branch listing says so (classic protection, or any active repo or organisation ruleset) or an admin marked it. GitCove is no stricter than GitHub, so an unprotected default branch accepts pushes. If GitCove doesn't know a branch's protection, it treats the branch as protected. That covers a repo whose branches were never listed, and a branch created on GitHub since the last listing. A new branch name, one GitHub doesn't have yet, is accepted. If a GitHub ruleset pattern refuses it at replay, it goes to the conflicts list with its commits kept.
 
-Each accepted push is queued for replay before Git moves the ref, so a crash can't lose it. Until its work reaches GitHub, a branch with queued pushes stays where developers left it, and other branches keep following GitHub.
+Each accepted push is queued for replay before Git moves the ref, so a crash can't lose it. The developer sees one line saying when it reaches GitHub: `remote: GitCove: GitHub is down. Your push is saved on GitCove and will be sent to GitHub when it's back.` In degraded mode it says "shortly" (or "once the admin resumes replay" while paused), and a push that replay will send as a PR ends ", as a PR". Until its work reaches GitHub, a branch with queued pushes stays where developers left it, and other branches keep following GitHub.
 
 **Replay** fetches each repo again before pushing, then for each branch:
 
@@ -157,10 +157,10 @@ With `COVE_APP_CLIENT_ID`, `COVE_APP_CLIENT_SECRET_FILE` and `COVE_USER_KEY_FILE
 Once, while things are normal (Git needs a credential helper, such as `osxkeychain` or `libsecret`):
 
 ```sh
-COVE_TOKEN=<token> cove client setup -url https://gitcove.example.com -org my-org
+COVE_TOKEN=<token> cove client setup -url https://gitcove.example.com -org my-org [-notify]
 ```
 
-This also installs the agent: a launchd agent on macOS (`~/Library/LaunchAgents/dev.gitcove.agent.plist`, log in `~/Library/Logs/cove-agent.log`) a systemd user service on Linux (`cove-agent`), or a Task Scheduler task on Windows (`GitCoveAgent`, experimental, untested on a real machine). Every 30 seconds it asks GitCove's `/status` for the mode. In failover or degraded mode (paused or not) it sends Git for `github.com/my-org/...` (HTTPS and SSH URLs) to GitCove, so existing clones work unchanged. Otherwise it sends it back to GitHub. It acts only when the mode changes, so a switch you make by hand holds until the next one. Every switch shows a system notification (`osascript` on macOS, `notify-send` on Linux, a PowerShell toast on Windows). If it can't reach GitCove, it changes nothing.
+This also installs the agent: a launchd agent on macOS (`~/Library/LaunchAgents/dev.gitcove.agent.plist`, log in `~/Library/Logs/cove-agent.log`) a systemd user service on Linux (`cove-agent`), or a Task Scheduler task on Windows (`GitCoveAgent`, experimental, untested on a real machine). Every 30 seconds it asks GitCove's `/status` for the mode. In failover or degraded mode (paused or not) it sends Git for `github.com/my-org/...` (HTTPS and SSH URLs) to GitCove, so existing clones work unchanged. Otherwise it sends it back to GitHub. It acts only when the mode changes, so a switch you make by hand holds until the next one. You hear of a switch from your team's channel (`COVE_ALERT_WEBHOOK`) and from the line `git push` prints. With `-notify`, the agent also shows a system notification on every switch (`osascript` on macOS, `notify-send` on Linux, a PowerShell toast on Windows); it's off by default, kept in `cove.notify` in your global Git config, and running setup again without it turns it off. If it can't reach GitCove, it changes nothing.
 
 On Windows the task runs the agent at your logon without admin rights, through `conhost --headless` so it has no window, and starts it again within a minute if it dies. It has no log file. To remove it: `schtasks /delete /tn GitCoveAgent /f`.
 
@@ -223,7 +223,7 @@ Making replay resend after a restart, or apply edits without checking GitHub's v
 
 The PR campaign (`TestPullCampaign`) adds a third person and has them push, open PRs, review with line comments, reply, approve and merge locally, while on GitHub PR branches and `main` move, PRs are closed or merged, line comments are deleted and the linked account is revoked. Besides the checks above, it checks that replay never pushed to `main`, and that every approval or change request on GitHub came from the reviewer's own account, for their own review, at the commit they reviewed. `fakehub` enforces GitHub's rules here: a review's commit must be part of the PR, an approval must be for the PR's head and not by its author, and a reply needs its parent.
 
-`TestDegradedCampaign` runs the replay and PR campaigns in degraded mode. GitHub is slow and flaky instead of down (up to 40% errors, timeouts, lost responses, rate limits, delays, lagging listings), and replay runs in the background, with kills, while people push, open PRs, review and merge. The campaigns' checks then apply unchanged. `TestUnlandedPushWaits` stops a push between the hook recording it and Git moving the branch, which is where background replay could otherwise drop it. The tests in `internal/health` use a fake clock against `fakehub`'s delay, flapping, SSH-only, HTTPS-only and installation-token faults. They check the alerts and their hints, and that the checks never change the mode. `TestFailoverEndToEnd` runs the real agent: it switches on failover, holds while GitCove restarts, switches back, follows `cove degraded start`, `pause` and `stop`, and notifies on every switch.
+`TestDegradedCampaign` runs the replay and PR campaigns in degraded mode. GitHub is slow and flaky instead of down (up to 40% errors, timeouts, lost responses, rate limits, delays, lagging listings), and replay runs in the background, with kills, while people push, open PRs, review and merge. The campaigns' checks then apply unchanged. `TestUnlandedPushWaits` stops a push between the hook recording it and Git moving the branch, which is where background replay could otherwise drop it. The tests in `internal/health` use a fake clock against `fakehub`'s delay, flapping, SSH-only, HTTPS-only and installation-token faults. They check the alerts and their hints, and that the checks never change the mode. `TestFailoverEndToEnd` runs the real agent: it switches on failover, holds while GitCove restarts, switches back, follows `cove degraded start`, `pause` and `stop`, notifies on every switch when set up with `-notify`, and checks that each switch posts one team message. `TestAcceptedPushMessage` pushes through the real hook in failover, degraded and paused mode, and to the default branch, and checks the line the developer sees.
 
 CI runs gofmt, `go vet`, golangci-lint, the tests with `-race`, and a Docker build. A nightly run uses 200 seeds.
 

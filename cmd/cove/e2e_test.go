@@ -12,11 +12,13 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -222,7 +224,7 @@ func TestFailoverEndToEnd(t *testing.T) {
 		}
 		return strings.TrimSpace(string(out))
 	}
-	run("", x.bin, "client", "setup", "-url", "http://"+x.addr, "-org", x.hub.Org, "-agent=false") // not a service on the test machine
+	run("", x.bin, "client", "setup", "-url", "http://"+x.addr, "-org", x.hub.Org, "-agent=false", "-notify") // not a service on the test machine
 	agent := exec.Command(x.bin, "client", "agent", "-every", "100ms")
 	agent.Env = devEnv
 	if err := agent.Start(); err != nil {
@@ -258,6 +260,19 @@ func TestFailoverEndToEnd(t *testing.T) {
 	if !lines.Scan() || lines.Text() != "ok: GitCove will post your work from outages as ben-gh" || authorise.Wait() != nil {
 		t.Fatalf("client authorise: %q\nserver log:\n%s", lines.Text(), srvLog)
 	}
+
+	// The team's channel, where every mode switch is announced.
+	var mu sync.Mutex
+	var said []string
+	channel := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var m struct{ Text string }
+		_ = json.NewDecoder(r.Body).Decode(&m)
+		mu.Lock()
+		said = append(said, m.Text)
+		mu.Unlock()
+	}))
+	t.Cleanup(channel.Close)
+	x.env = append(x.env, "COVE_ALERT_WEBHOOK="+channel.URL)
 
 	x.hub.SetFaults(fakehub.Faults{APIDown: true, GitDown: true})
 	if out, e, err := x.cove("failover", "start"); err != nil {
@@ -342,4 +357,20 @@ func TestFailoverEndToEnd(t *testing.T) {
 		waitRule(step.on)
 	}
 	waitNotes(4) // failover on and off, degraded on and off
+
+	// One team message per switch; the server's health alerts share the channel.
+	var switches []string
+	mu.Lock()
+	for _, m := range said {
+		for _, p := range []string{"failover started.", "failover ended.", "degraded mode on.", "replay paused.", "degraded mode off."} {
+			if strings.HasPrefix(m, "GitCove: "+p) {
+				switches = append(switches, p)
+			}
+		}
+	}
+	all := strings.Join(said, "\n")
+	mu.Unlock()
+	if got, want := strings.Join(switches, " "), "failover started. failover ended. degraded mode on. replay paused. degraded mode on. degraded mode off."; got != want {
+		t.Fatalf("team messages:\n%s\nwant\n%s\nall:\n%s", got, want, all)
+	}
 }

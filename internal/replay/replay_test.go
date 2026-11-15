@@ -286,3 +286,27 @@ func TestPushesDuringFailoverAndReplay(t *testing.T) {
 		t.Fatalf("skipped branch still served at %s", got)
 	}
 }
+
+// TestAcceptedPushMessage: a developer whose push is accepted is told when it reaches GitHub, and
+// that default-branch work gets there as a PR.
+func TestAcceptedPushMessage(t *testing.T) {
+	e := setup(t, 1, "app")
+	dev := e.clone(t, "app")
+	for _, c := range []struct {
+		mode         store.Mode
+		branch, want string
+	}{
+		{store.Degraded, "fix", "will be sent to GitHub shortly."},
+		{store.Paused, "fix", "will be sent to GitHub once the admin resumes replay."},
+		{store.Failover, "fix", "will be sent to GitHub when it's back."},
+		{store.Failover, "main", "will be sent to GitHub when it's back, as a PR."},
+	} {
+		if m, _ := e.st.Mode(context.Background()); m != c.mode {
+			e.mode(t, c.mode)
+		}
+		work(t, dev, c.branch, c.branch+"-"+string(c.mode)+".txt")
+		if out, err := push(dev, c.branch); err != nil || !strings.Contains(out, "remote: GitCove: ") || !strings.Contains(out, c.want) {
+			t.Fatalf("%s push to %s: %v: %s\nwant %q", c.mode, c.branch, err, out, c.want)
+		}
+	}
+}

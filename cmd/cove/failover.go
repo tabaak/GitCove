@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -17,6 +18,12 @@ import (
 )
 
 func cliActor() string { return "cli:" + env("USER", "unknown") }
+
+// announce tells the team about a mode switch through the admin's alert channel, so developers
+// hear it from GitCove rather than from a pop-up.
+func announce(cfg config, msg string) {
+	alerter(cfg.AlertWebhook, slog.New(slog.NewJSONHandler(os.Stderr, nil)))(msg)
+}
 
 func onOff(args []string, cmd string) (bool, error) {
 	if len(args) != 1 || (args[0] != "on" && args[0] != "off") {
@@ -41,6 +48,8 @@ func failoverCmd(cfg config, args []string) error {
 			return err
 		}
 		fmt.Println("Failover started: GitCove accepts pushes. Developers' agents switch them to GitCove; without one, `cove client on`.")
+		announce(cfg, "failover started. GitHub is down, so Git goes to GitCove: the agent switches you, or run `cove client on`. "+
+			"Pushes are saved and sent to GitHub when it's back; default-branch work arrives as a PR.")
 		return nil
 	case "end":
 		a, err := build(cfg)
@@ -52,6 +61,8 @@ func failoverCmd(cfg config, args []string) error {
 			return err
 		}
 		fmt.Println("Failover ended: pushes are refused again. Developers' agents switch them back to GitHub; without one, `cove client off`.")
+		announce(cfg, "failover ended. Push to GitHub again: the agent switches you back, or run `cove client off`. "+
+			"Work pushed to GitCove reaches GitHub once the admin approves the replay.")
 		return printPlan(ctx, a)
 	case "allow-protected":
 		on, err := onOff(args[1:], "failover allow-protected")
@@ -92,11 +103,14 @@ func degradedCmd(cfg config, args []string) error {
 		}
 		fmt.Println("Degraded mode on: GitCove takes pushes and changes, and replays the conflict-free ones to GitHub in the background. " +
 			"Conflicts wait for `cove replay plan`. Developers' agents switch them to GitCove; without one, `cove client on`.")
+		announce(cfg, "degraded mode on. GitHub is slow or flaky, so Git goes to GitCove: the agent switches you, or run `cove client on`. "+
+			"Pushes are sent to GitHub shortly; default-branch work arrives as a PR.")
 	case "pause":
 		if err := st.SetMode(ctx, cliActor(), store.Paused); err != nil {
 			return err
 		}
 		fmt.Println("Replay paused: GitCove still takes pushes and changes, but sends nothing to GitHub until `cove degraded start`.")
+		announce(cfg, "replay paused. Keep pushing to GitCove as before; nothing is sent to GitHub until the admin resumes it.")
 	case "stop":
 		n, err := st.Unreplayed(ctx)
 		if err != nil {
@@ -110,6 +124,8 @@ func degradedCmd(cfg config, args []string) error {
 			return err
 		}
 		fmt.Printf("Degraded mode off: pushes are refused again. Developers' agents switch them back to GitHub; without one, `cove client off`. %d changes still to replay.\n", n)
+		announce(cfg, fmt.Sprintf("degraded mode off. Push to GitHub again: the agent switches you back, or run `cove client off`. "+
+			"%d changes from GitCove are still on their way to GitHub.", n))
 	default:
 		return errors.New("degraded: want start, pause or stop")
 	}

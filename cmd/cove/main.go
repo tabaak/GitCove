@@ -53,7 +53,7 @@ const usage = `usage: cove <command>
   repo pr-only OWNER/REPO on|off           send default and deploy branch work as PRs (default on)
   repo approvals OWNER/REPO N              approvals a PR needs before it can be merged on GitCove (default 1)
 
-  client setup -url URL -org ORG [-agent=false]
+  client setup -url URL -org ORG [-agent=false] [-notify]
                                            on a developer machine: save GitCove's address and token (COVE_TOKEN or stdin),
                                            and install the agent (launchd, systemd user service, or Task Scheduler on Windows)
   client on | client off                   send Git for the organisation to GitCove, or back to GitHub, by hand
