@@ -16,11 +16,12 @@ GitCove is a self-hosted Go service that mirrors a GitHub organisation's code, i
 | 3 | Issue and comment replay | About 2.5 weeks | 2 |
 | 4 | PRs, reviews and local merging | About 3 weeks | 3 |
 | 5 | Seamless failover | 1.5–2 weeks | 4 |
-| 6 | Proof and launch 1.0 | 1–1.5 weeks | 5 |
-| 7 | Backup protections and mirror hardening (1.1) | About 2 weeks | 6 |
-| 8 | Extras (1.2) | 1.5–2 weeks | 7 |
+| 6 | Backup protections and sync hardening | About 1.5 weeks | 5 |
+| 7 | Proof and launch 1.0 | 1–1.5 weeks | 6 |
+| 8 | 1.1 | 0.5–1 week | 7 |
+| 9 | Extras (1.2) | 1.5–2 weeks | 8 |
 
-Milestones 0 to 6 take about 12 to 14 weeks, and the whole plan about 16 to 18. Milestones are strictly sequential, because each builds on the replay engine from the one before.
+Milestones 0 to 7 take about 13.5 to 15.5 weeks, and the whole plan about 16 to 18. Milestones are strictly sequential, because each builds on the replay engine from the one before. Backup protections and sync hardening come before launch, so the measurements and fault campaign in milestone 7 run on the final sync design.
 
 ## 3. Rules that apply to every milestone
 
@@ -144,7 +145,7 @@ Tasks:
 Tasks:
 
 - [x] Metadata schema: `issues`, `pull_requests`, `comments`, `reviews`, `labels`. *Changed: `issues`, `comments` and `labels` only. GitHub's issues listing returns PRs too, so PRs are mirrored as issues (`is_pr`) with their conversation comments, and comments, labels, close and reopen, and edits already work on them. Reviews are only read and written in milestone 4, so the `pull_requests`, `reviews` and `review_threads` tables move there.*
-- [x] Backfill and polling sync with saved cursors and the fixed-`since` or stable-first-page ETag approach (section 7). *Fixed `since`: issues and comments are listed oldest update first, and the cursor is saved with each page, so a backfill resumes. `since` is the cursor minus a minute, because listings lag behind writes (spike M), so an item updated just before the newest one seen can be listed after it. It changes only when the cursor does, so an idle repo costs two 304s and a label listing per cycle. Untested against GitHub. Deleted comments and issues stay until the weekly scan (milestone 7).*
+- [x] Backfill and polling sync with saved cursors and the fixed-`since` or stable-first-page ETag approach (section 7). *Fixed `since`: issues and comments are listed oldest update first, and the cursor is saved with each page, so a backfill resumes. `since` is the cursor minus a minute, because listings lag behind writes (spike M), so an item updated just before the newest one seen can be listed after it. It changes only when the cursor does, so an idle repo costs two 304s and a label listing per cycle. Untested against GitHub. Deleted comments and issues stay until the weekly scan (milestone 6).*
 - [x] Server-rendered web interface to browse repos, issues, PRs, comments and reviews, with a mode banner and the age of the copy. *Reviews move to milestone 4 with their mirror. Bodies are shown as escaped plain text, not rendered Markdown: safe without a sanitiser, and no new dependency. Sign-in is the GitCove token, kept in an HttpOnly, SameSite=Strict cookie, and cross-site posts are refused.*
 - [x] Web writes: comment, new issue with a temporary ID (`L-n`), labels, close and reopen, and edits. *Edits are of title and description, as in section 8.6; comments can't be edited. A new issue's title and description are edited in place until replay starts on it. Labels are limited to the repo's synced labels, so replay never creates one.*
 - [x] Metadata outbox with the hidden marker, the full life-cycle (`pending`, `sending`, `done`, `conflict`, `uncertain`), and marker lookup by filtered listing per spike M, waiting at least 15 s after `sending` and rechecking twice before an issue counts as unsent. *Changed: a `sending` text item whose marker is still missing after the wait and two rechecks goes to `uncertain`, and is never sent again by itself, also after a crash. A crash before the request went out (case 2) can't be told apart from a listing that lags (case 6), and resending in case 6 is a duplicate, which the exit criterion rules out. The cost is that a crash in that moment leaves an item for a human. The same wait applies to comments. What GitHub refuses (4xx) ends in `conflict`; a rate limit sends the item back to `pending`. Labels, state and edits carry no marker: they are decided again from GitHub's current version after a crash.*
@@ -153,7 +154,7 @@ Tasks:
 - [x] Conflict rules (section 8.6): per-change labels, GitHub's state kept on close or reopen conflicts, GitHub's text kept on edit conflicts with the proposal posted as a comment. *"GitHub also changed" is judged by value: replay reads the issue's current version, applies a change only if GitHub still has the value it was made against, does nothing if GitHub already has the new value, and otherwise posts a note. A state has two values, so a note for close or reopen appears only when the change asked for the state GitCove showed and GitHub moved away from it, and a close then reopen on GitHub during the outage counts as unchanged. GitHub has no conditional update for issues, so a change landing in the milliseconds between replay's read and its write can still be overwritten. It stays in GitHub's edit history.*
 - [x] Authorship: App attribution line by default. If decision D3 is yes, `client authorise` through device flow, encrypted refresh-token storage with the rotated token saved in the same transaction as the refresh, and fallback to the App. *D3 is yes (decided 8 Nov). `cove client authorise` asks GitCove, which runs the device flow itself, so the tokens never reach the developer's machine. They are encrypted with AES-256-GCM under a key in `COVE_USER_KEY_FILE`. The refresh is an HTTP call, so "the same transaction" means the rotated token is saved straight after it, before the access token is used. A token GitHub refuses is dropped and audited, and the App posts instead. A person's token also posts their labels, closes and edits. Text posted as the person ends with the original time, since GitHub can't set it.*
 - [x] Basic plan screen: counts, request estimate, and the `conflicts` and `uncertain` lists. *In `cove replay plan`: counts by kind, the number of writes and the time the budget needs, each item's poster and what it waits for, and both lists. There's no web plan page.*
-- [x] `fakehub`: issue and comment endpoints with listing lag, lost responses, rate limits, and out-of-order webhooks. *Changed: no webhook faults, because webhooks come in milestone 7 and sync is polling only (section 12 updated). Also added: labels, the App's identity, the device flow and user tokens with rotating refresh tokens, lost responses for every API write, and a shared number sequence for issues and PRs.*
+- [x] `fakehub`: issue and comment endpoints with listing lag, lost responses, rate limits, and out-of-order webhooks. *Changed: no webhook faults, because webhooks come in milestone 6 and sync is polling only (section 12 updated). Also added: labels, the App's identity, the device flow and user tokens with rotating refresh tokens, lost responses for every API write, and a shared number sequence for issues and PRs.*
 
 **Exit:** a fault campaign on comments and issues passes all applicable checks, including a created item that doesn't show up in listings for a while. Case 6 in section 8.3 ends in `uncertain`, never a repost. *Met in `fakehub`: `TestIssueCampaign` (10 seeds per CI run, 200 nightly; 200 pass locally with `-race`) has two people, one with an authorised GitHub account, change issues while GitHub changes the same ones, then replays under 500s, timeouts, lost responses, rate limits, listings lagging up to three times the marker wait, kills and repeat outages. It checks R2, R3, R5 and R7 and that a full sync agrees (check 3 is about refs and doesn't apply). `TestCase6Uncertain` covers case 6 directly. Making replay resend after a restart, or apply edits without the base check, makes the campaign fail. `TestFailoverEndToEnd` covers the real binary from `client authorise` to an issue posted under the person's name. Not yet run against the sandbox organisation.*
 
@@ -171,7 +172,7 @@ Tasks:
 - [x] Local merge conflicts: refuse cleanly, leave nothing half-merged, and reset approvals when the head commit changes. *The merge is computed with `git merge-tree` in the bare repo, and the branch moves by compare-and-swap, so there is nothing to half-merge. The merge is recorded before the branch moves and taken back if the move fails; replay checks the branch really contains it.*
 - [x] Linked issues: close them locally when a PR with a closing keyword is merged, without replaying that close as its own item.
 - [x] Two-state display for a PR merged locally. A PR closed on GitHub without merging goes to `conflicts`. *Changed: checked when the merge is replayed, with an alert. After replay GitHub is the only truth again, and someone closing the PR there later is their decision, not a conflict, so GitCove doesn't keep watching.*
-- [ ] ~~Show GitHub's last known check results read-only on mirrored PRs.~~ *Dropped: the App has neither the Checks nor the Commit statuses permission, so this means asking every installation for more access, plus a request per open PR per sync. The merge button says checks aren't run or required. Revisit with the interface polish in milestone 8 if people ask.*
+- [ ] ~~Show GitHub's last known check results read-only on mirrored PRs.~~ *Dropped: the App has neither the Checks nor the Commit statuses permission, so this means asking every installation for more access, plus a request per open PR per sync. The merge button says checks aren't run or required. Revisit with the interface polish in milestone 9 if people ask.*
 - [x] Fork PRs: read, comment and review only.
 - [x] Interface labels "approved on GitCove, not checked by GitHub" until replay.
 - [x] Per-PR replay in merge order, with the order listed in each PR's text. *Changed: the merge commit is never pushed. The branch a locally merged PR came from is pushed like any other, the PR is opened or already exists, and a note on it says it was merged on GitCove, at which commit, approved by whom, and which PRs were merged before it. The target branch on GitCove keeps the merge until that note is posted, then follows GitHub again. **Dropped: the bundle PR fallback.** The chain wasn't awkward in the prototype, and it was already fourth on the cut list.*
@@ -197,9 +198,18 @@ Tasks:
 
 **Exit:** in `fakehub`, with delay and flapping faults, the agent switches correctly and no false alarm splits the team's work. Replay in degraded mode passes all six checks. *Met in `fakehub`: no switch happens without the admin, so no false alarm can split the team's work. The tests in `internal/health` drive the checker with a fake clock through 40 minutes of flapping, slow answers, 40% errors, a failing installation token, SSH-only or HTTPS-only outages and a full outage, and check the alerts and their hints, and that the mode never changes. Removing the "down paths aren't flaky" rule fails them. `TestFailoverEndToEnd` runs the real agent: it switches on failover, changes nothing while GitCove is killed and restarted, switches back, follows `cove degraded start`, `pause` and `stop`, and notifies once per switch. `TestDegradedCampaign` (10 seeds per CI run, 200 nightly; 40 pass locally with `-race`) runs the push and PR campaigns in degraded mode, with replay in the background while people work, and passes their checks (all six). `TestUnlandedPushWaits` fails without the race fix. The campaign also found a milestone 4 bug: a reply to a queued review whose op ID started with "c" was read as a reply to a GitHub comment and failed every pass (about 1 in 16). It's fixed, with `TestReplyParentFormat`. Not yet run against the sandbox organisation, and the agent's launchd and systemd install has never been run.*
 
-## 10. Milestones 6 to 8
+## 10. Milestones 6 to 9
 
-### Milestone 6: proof and launch 1.0
+### Milestone 6: backup protections and sync hardening
+
+- [ ] History refs under `refs/gitcove/history/<timestamp>/...`, saved before any fetch that moves or removes a ref, with a daily 90-day removal job.
+- [ ] Hide history and GitHub refs with `hideRefs`, and test whether a client can still fetch them by commit ID. If it can, move history into a separate repository.
+- [ ] `cove restore` to `gitcove/restored-<branch>-<timestamp>`, restored branches exempt from following GitHub, and `--push` with a read-write App.
+- [ ] Webhooks with HMAC verification and durable de-duplication, the weekly full scan, tombstones, and ETag polling.
+
+**Exit:** a force-pushed branch can be brought back and survives the next sync, clients can't fetch hidden history by commit ID, and with dropped, repeated and out-of-order webhooks a second full sync finds no unexplained differences.
+
+### Milestone 7: proof and launch 1.0
 
 - [ ] Run the large fault campaign across the full scenario matrix (section 12), triage every failure, and keep a bug list with the fix for each.
 - [ ] Run the full scenario against the sandbox organisation.
@@ -210,20 +220,16 @@ Tasks:
 
 **Exit:** a stranger can install it from the README alone, and the results are published.
 
-### Milestone 7: backup protections and mirror hardening
+### Milestone 8: 1.1
 
-- [ ] History refs under `refs/gitcove/history/<timestamp>/...`, saved before any fetch that moves or removes a ref, with a daily 90-day removal job.
-- [ ] Hide history and GitHub refs with `hideRefs`, and test whether a client can still fetch them by commit ID. If it can, move history into a separate repository.
-- [ ] `cove restore` to `gitcove/restored-<branch>-<timestamp>`, restored branches exempt from following GitHub, and `--push` with a read-write App.
+- [ ] LFS detection and warnings.
 - [ ] `cove purge`, and `orphaned` repos with an admin alert.
 - [ ] Permission sync from GitHub through the collaborators endpoint, which spike E showed works with Metadata: read.
-- [ ] LFS detection and warnings.
-- [ ] Webhooks with HMAC verification and durable de-duplication, the weekly full scan, tombstones, and ETag polling.
 - [ ] A read-only App option.
 
-**Exit:** a force-pushed branch can be brought back and survives the next sync, clients can't fetch hidden history by commit ID, and with dropped, repeated and out-of-order webhooks a second full sync finds no unexplained differences.
+**Exit:** a repo deleted on GitHub or left by an uninstalled App becomes `orphaned` with an alert and `cove purge` removes it, an LFS repo shows a warning, a collaborator removed on GitHub loses access on GitCove at the next sync, and an instance runs with only the read-only App.
 
-### Milestone 8: extras
+### Milestone 9: extras
 
 - [ ] Design note for the isolated test runner first: no network, no secrets, one team-chosen command, result shown as information, never a deploy.
 - [ ] Implement the runner and show its result on replay PRs.
@@ -249,12 +255,13 @@ Tasks:
 |---|---|
 | 1 | GitHub fully down, partly down (API up and Git down, or the reverse), HTTP 500s, timeouts |
 | 2 | Kill GitCove at random points, repeat outages, force-pushes and deleted branches on GitHub, developers pushing the same commits first, divergent branches, branch protection refusing a push |
-| 3 | Rate-limit responses, a created item missing from listings for a while, lost responses, the same item edited on both sides. *Webhook faults moved to milestone 7 with webhooks* |
+| 3 | Rate-limit responses, a created item missing from listings for a while, lost responses, the same item edited on both sides. *Webhook faults moved to milestone 6 with webhooks* |
 | 4 | Local merges while `main` moves, merge conflicts on a local merge, expired or revoked user tokens, approvals for a commit that changed, line comments on a commit that never reached GitHub, a parent comment deleted before a reply replays, a conversation resolved or given new comments on GitHub during replay, a PR closed on GitHub without merging |
 | 5 | Sustained error rates of 1 to 40%, installation-token failures, SSH-only and HTTPS-only failures, GitHub flapping, the agent losing contact mid-switch |
-| 7 | A repo deleted on GitHub, the App uninstalled, a sync straight after a restore, dropped, repeated and out-of-order webhooks |
+| 6 | A sync straight after a restore, dropped, repeated and out-of-order webhooks |
+| 8 | A repo deleted on GitHub, the App uninstalled |
 
-Every fault is seeded, so any failing run can be repeated exactly. Proposed targets: at least 200 seeds per scenario family at each milestone exit, and thousands in milestone 6. These numbers are a starting point.
+Every fault is seeded, so any failing run can be repeated exactly. Proposed targets: at least 200 seeds per scenario family at each milestone exit, and thousands in milestone 7. These numbers are a starting point.
 
 ## 13. Engineering risks
 
@@ -277,8 +284,8 @@ Every fault is seeded, so any failing run can be repeated exactly. Proposed targ
 
 Cut in this order:
 
-1. Milestone 8
-2. LFS detection and orphaned repos
+1. Milestone 9
+2. Milestone 8
 3. Plan screen detail
 4. The bundle PR fallback
 5. ~~Automatic failover, keeping the agent~~ (dropped in milestone 5)
@@ -294,5 +301,6 @@ Never cut the replay invariants, the fault test, or issue and comment replay.
 | Milestone 3 | Comments and new issues also survive and return |
 | Milestone 4 | The full workflow, with PRs, reviews and local merging |
 | Milestone 5 | Switching is seamless, and slow GitHub is handled |
-| Milestone 6 | Launched, with measured results |
-| Milestone 7 | 90-day protection against deletions and force-pushes on GitHub |
+| Milestone 6 | 90-day protection against deletions and force-pushes on GitHub, and webhook sync that stays correct |
+| Milestone 7 | Launched, with measured results |
+| Milestone 8 | LFS warnings, orphaned repos and purge, permissions from GitHub, and a read-only App option |
