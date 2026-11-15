@@ -3,10 +3,29 @@ package main
 import (
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestLockFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent.lock")
+	f, err := lockFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lockFile(path); !errors.Is(err, errLocked) {
+		t.Fatalf("second lock: %v, want errLocked", err)
+	}
+	f.Close() // as when the agent exits
+	f, err = lockFile(path)
+	if err != nil {
+		t.Fatalf("lock after release: %v", err)
+	}
+	f.Close()
+}
 
 func TestTaskXML(t *testing.T) {
 	exe, account := `C:\Program Files\A&B <"it's">\cove.exe`, `PC\o'brien&co`

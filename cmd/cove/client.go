@@ -143,8 +143,25 @@ func setRule(base, org string, on bool) error {
 // writes (failover and degraded, paused or not) and off otherwise, with a system notification. It
 // acts only when that answer changes, so `cove client on` or `off` by hand holds until the next
 // switch. If GitCove can't be reached it changes nothing: a developer keeps working where they
-// were rather than being split from the team by a network blip.
+// were rather than being split from the team by a network blip. Only one runs per user: a second
+// copy exits at once, successfully, so two can't fight over the rule.
 func agent(every time.Duration) error {
+	cfg, err := os.UserConfigDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Join(cfg, "gitcove"), 0o700); err != nil {
+		return err
+	}
+	lock, err := lockFile(filepath.Join(cfg, "gitcove", "agent.lock"))
+	if errors.Is(err, errLocked) {
+		log.Print("another cove client agent is already running; this one exits")
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer lock.Close() // keeps the lock held, and the file alive, while the agent runs
 	base, org, err := clientConfig()
 	if err != nil {
 		return err
@@ -203,6 +220,8 @@ $m::CreateToastNotifier('{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShel
 		log.Printf("notification: %v %s", err, out)
 	}
 }
+
+var errLocked = errors.New("locked by another process")
 
 func remoteMode(hc *http.Client, base string) (string, error) {
 	resp, err := hc.Get(base + "/status")

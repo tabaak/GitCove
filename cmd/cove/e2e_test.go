@@ -5,6 +5,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
@@ -208,7 +209,8 @@ func TestFailoverEndToEnd(t *testing.T) {
 		}
 		t.Fatalf("%d notifications, want %d: one per switch", got, n)
 	}
-	devEnv := append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "GIT_CONFIG_GLOBAL="+gitcfg, "GIT_TERMINAL_PROMPT=0", "COVE_TOKEN="+tok,
+	devEnv := append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "GIT_CONFIG_GLOBAL="+gitcfg, "GIT_TERMINAL_PROMPT=0",
+		"COVE_TOKEN="+tok, "HOME="+home, "XDG_CONFIG_HOME="+home, // HOME: the agent's lock, apart from any real agent here
 		"GIT_AUTHOR_NAME=ben", "GIT_AUTHOR_EMAIL=ben@example.invalid", "GIT_COMMITTER_NAME=ben", "GIT_COMMITTER_EMAIL=ben@example.invalid")
 	run := func(dir, name string, args ...string) string {
 		t.Helper()
@@ -263,6 +265,14 @@ func TestFailoverEndToEnd(t *testing.T) {
 	}
 	waitRule(true)
 	waitNotes(1)
+	// A second agent, as a second setup could start, leaves at once and exits 0.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	second := exec.CommandContext(ctx, x.bin, "client", "agent")
+	second.Env = devEnv
+	if out, err := second.CombinedOutput(); err != nil || !strings.Contains(string(out), "already running") {
+		t.Fatalf("second agent: %v\n%s", err, out)
+	}
 	clone := filepath.Join(t.TempDir(), "app")
 	run("", "git", "clone", "-q", "https://github.com/"+x.hub.Org+"/app.git", clone)
 	if err := os.WriteFile(filepath.Join(clone, "fix.txt"), []byte("fix\n"), 0o600); err != nil {
