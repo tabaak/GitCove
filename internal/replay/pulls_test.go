@@ -219,3 +219,13 @@ func TestPullRequestFlow(t *testing.T) {
 		t.Errorf("mirrored reviews of #%d: %+v %v", n, rs, err)
 	}
 }
+
+// A queued review's op ID is hex, so a reply's parent "<op ID>/<index>" can start with "c" like a
+// GitHub comment's "c<ID>"; one in 16 replies to queued reviews did, and failed every pass.
+func TestReplyParentFormat(t *testing.T) {
+	for parent, want := range map[string]bool{"c123": true, "cf6575cd91d2086fbe472b78e4398381/0": false, "0f65/2": false} {
+		if got := githubParent(parent); got != want {
+			t.Errorf("githubParent(%q) = %v", parent, got)
+		}
+	}
+}

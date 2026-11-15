@@ -110,8 +110,8 @@ func TestCloneWhileGitHubDown(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.health.Check(ctx)
-	if api, g := e.health.Status(); !api.OK || !g.OK {
-		t.Fatalf("health with GitHub up: api=%v git=%v", api, g)
+	if st := e.health.Status(); !st["api"].OK || !st["git-https"].OK {
+		t.Fatalf("health with GitHub up: %+v", st)
 	}
 
 	want := e.hub.Refs(t, "app")

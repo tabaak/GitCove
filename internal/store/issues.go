@@ -235,8 +235,8 @@ func (s *Store) Record(ctx context.Context, repoID, tokenID int64, kind, issue s
 func record(tx *sql.Tx, repoID, tokenID int64, kind, issue string, c Change) (string, int64, error) {
 	if m, err := mode(tx); err != nil {
 		return "", 0, err
-	} else if m != Failover {
-		return "", 0, fmt.Errorf("%w: GitCove takes changes only during failover (mode is %s)", ErrWrongMode, m)
+	} else if !m.TakesWrites() {
+		return "", 0, fmt.Errorf("%w: GitCove takes changes only during failover or degraded mode (mode is %s)", ErrWrongMode, m)
 	}
 	var base any
 	switch kind {
@@ -306,11 +306,14 @@ func currentValue(tx *sql.Tx, repoID int64, issue, kind, field string) (string, 
 	return body, err
 }
 
-// EditLocal changes the title and body of a new issue that hasn't started replaying.
+// EditLocal changes the title and body of a new issue that hasn't started replaying. Only in
+// failover: in degraded mode replay may have read the item already and would post the old text.
 func (s *Store) EditLocal(ctx context.Context, repoID int64, localID, title, body string) error {
 	return s.tx(ctx, func(tx *sql.Tx) error {
 		if m, err := mode(tx); err != nil {
 			return err
+		} else if m == Degraded {
+			return fmt.Errorf("%w: in degraded mode %s may already be on its way to GitHub; edit it there once it's posted", ErrWrongMode, localID)
 		} else if m != Failover {
 			return fmt.Errorf("%w: GitCove takes changes only during failover (mode is %s)", ErrWrongMode, m)
 		}
@@ -368,7 +371,7 @@ func (s *Store) MarkMeta(ctx context.Context, id int64, target, poster string) e
 	return s.tx(ctx, func(tx *sql.Tx) error {
 		if m, err := mode(tx); err != nil {
 			return err
-		} else if m != Replaying {
+		} else if !m.Replays() {
 			return fmt.Errorf("%w: mode is %s", ErrWrongMode, m)
 		}
 		return updateItems(tx, []int64{id}, "state = 'sending', target = ?, poster = ?", target, poster)

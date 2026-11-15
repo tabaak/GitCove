@@ -59,17 +59,17 @@ func reject(format string, args ...any) error { return rejection(fmt.Sprintf(for
 
 func isZero(sha string) bool { return strings.Trim(sha, "0") == "" }
 
-// preReceive accepts a push only in failover, only to branches, never deleting or rewriting one,
-// and never to a protected branch unless the admin allowed it for this failover. Accepted updates
-// are queued for replay before git moves any ref, so a crash can't leave a push unrecorded; if the
-// push then fails, replay finds nothing new on the branch and pushes nothing.
+// preReceive accepts a push only in failover or degraded mode, only to branches, never deleting or
+// rewriting one, and never to a protected branch unless the admin allowed it for this failover.
+// Accepted updates are queued for replay before git moves any ref, so a crash can't leave a push
+// unrecorded; if the push then fails, replay finds nothing new on the branch and pushes nothing.
 func (s *Store) preReceive(ctx context.Context, st *store.Store, dir string, repoID int64, pusher string, in io.Reader) error {
 	p, err := st.Policy(ctx, repoID)
 	if err != nil {
 		return err
 	}
-	notFailover := reject("pushes are accepted only during failover. Push to GitHub.")
-	if p.Mode != store.Failover {
+	notFailover := reject("pushes are accepted only during failover or degraded mode. Push to GitHub.")
+	if !p.Mode.TakesWrites() {
 		return notFailover
 	}
 	var ups []store.RefUpdate

@@ -39,6 +39,9 @@ Put TLS in front of it, for example with Caddy. Developers send their token as a
 | `COVE_APP_CLIENT_ID` | unset | The App's client ID. With the next two, lets people post their outage work under their own names (see below) |
 | `COVE_APP_CLIENT_SECRET_FILE` | unset | Path to a file holding the App's client secret |
 | `COVE_USER_KEY_FILE` | unset | Path to the key that encrypts people's GitHub tokens: 64 hex digits, e.g. from `openssl rand -hex 32`. Keep it off the data volume |
+| `COVE_AUTO_FAILOVER` | `0` (off) | Start failover by itself once every health check has failed for this long, e.g. `10m`. See "Automatic switching" |
+| `COVE_DEGRADED` | `off` | `on`: enter degraded mode by itself when GitHub is slow or flaky. See "Automatic switching" |
+| `COVE_GITHUB_SSH` | `github.com:22` | GitHub's SSH server, for the health check. `off` skips it, if GitCove's server can't reach that port at all |
 | `COVE_GITHUB_API`, `COVE_GITHUB_GIT` | `https://api.github.com`, `https://github.com` | GitHub endpoints, overridden only in tests |
 
 ### Admin CLI
@@ -70,7 +73,7 @@ cove branch list
 cove repo pr-only my-org/api off          # for repos with no push-based deploys
 ```
 
-The mode (normal, failover, reconciling, replaying) lives in the database, so it survives a restart, and every change is written to the audit log. So are the emergency setting, branch marks, the PR-only setting, and skips and retries. `GET /status` shows the mode.
+The mode (normal, failover, reconciling, replaying, degraded) lives in the database, so it survives a restart, and every change is written to the audit log. So are the emergency setting, branch marks, the PR-only setting, and skips and retries. `GET /status` shows the mode.
 
 **During failover** GitCove accepts pushes to branches. It refuses:
 
@@ -95,6 +98,19 @@ Before pushing anything, replay compares the branch's `.github/workflows` with e
 Pushes never use `--force`, so GitHub only ever fast-forwards. Each push can start workflows on GitHub, so the plan lists every branch it will push. Once a branch's work is on GitHub, the branch follows GitHub again, even while the PR is unmerged. Until then, the unmerged work is on the `gitcove/...` branch, as it would be on GitHub. A branch in the conflicts list keeps its GitCove commits until an admin skips it.
 
 Replay can stop at any point and resume. The fallback branch name is stored before anything is sent. A restart looks up the PR from that branch before opening one, and GitHub refuses a second open PR with the same head and base. If GitHub fails during replay, replay pauses, raises an alert, and retries on each interval. `cove failover start` returns to failover. Finished items stay finished, and new pushes join the queue.
+
+### Health checks and automatic switching
+
+Every `COVE_HEALTH_INTERVAL`, GitCove checks GitHub on four paths at once: the API signed in as the App, the API without signing in, Git over HTTPS, and Git over SSH (only its greeting, so no key is needed). An answer slower than 5 seconds counts as an error. GitCove doesn't test writes, because a test write would leave something on GitHub each time. Replay's own writes show whether writing works.
+
+When a path hasn't answered for 2 minutes, the admin gets an alert naming it, and another when the set changes or everything answers again. If only one of SSH and HTTPS is broken, the alert gives the `insteadOf` rule that moves developers to the other. If every path is down, it says to run `cove failover start`. If only the signed-in API fails, the alert shows that too, but it's GitCove's problem (the App or its key), not an outage.
+
+Both kinds of automatic switching are opt-in. If GitCove switches by mistake, the team's work is split across two systems, and for most teams that costs more than a few minutes' delay.
+
+- **Automatic failover** (`COVE_AUTO_FAILOVER=10m`) starts only when every path has failed for that long without a single answer, so a flapping GitHub never triggers it. It lasts at least 30 minutes. It ends by itself, to reconciling, once every path has answered in time for 10 minutes, and you still approve the replay plan. After it ends, it can't start again for 30 minutes. A failover an admin started is never ended by GitCove.
+- **Degraded mode** (`COVE_DEGRADED=on`) is for a GitHub that answers, but slowly or only some of the time. It starts when 20% of the last 5 minutes' checks failed or were slow. Paths that are fully down don't count towards this, since they get an alert instead. In degraded mode GitCove takes pushes and web changes as in failover, and replays them in the background as GitHub answers, without waiting for plan approval. Conflicts and uncertain items still wait for you. It ends once every path has answered in time for 10 minutes and nothing is left to replay. If everything goes down while degraded, automatic failover (if on) takes over. Local edits of new issues are refused in degraded mode, because replay may already be posting them.
+
+These thresholds are guesses (decision D6). Every automatic switch is alerted, written to the audit log as `auto`, and remembered across a restart.
 
 ### Issues and comments during failover
 
@@ -146,20 +162,24 @@ Once, while things are normal (Git needs a credential helper, such as `osxkeycha
 COVE_TOKEN=<token> cove client setup -url https://gitcove.example.com -org my-org
 ```
 
-When failover starts and ends:
+This also installs the agent: a launchd agent on macOS (`~/Library/LaunchAgents/dev.gitcove.agent.plist`, log in `~/Library/Logs/cove-agent.log`) or a systemd user service on Linux (`cove-agent`). Every 30 seconds it asks GitCove's `/status` for the mode. In failover or degraded mode it sends Git for `github.com/my-org/...` (HTTPS and SSH URLs) to GitCove, so existing clones work unchanged. Otherwise it sends it back to GitHub. It acts only when the mode changes, so a switch you make by hand holds until the next one. If it can't reach GitCove, it changes nothing.
+
+Without the agent (`-agent=false`, or another OS), switch by hand:
 
 ```sh
-cove client on    # Git sends github.com/my-org/... (HTTPS and SSH URLs) to GitCove; existing clones work unchanged
+cove client on    # Git sends github.com/my-org/... to GitCove
 cove client off   # back to GitHub
 ```
 
-This only changes the `url.<gitcove>/my-org/.insteadOf` rule in your global Git config. Without the CLI, `git clone https://x:<token>@gitcove.example.com/my-org/api.git` works too. Any username works, and the token is the password.
+Either way, only the `url.<gitcove>/my-org/.insteadOf` rule in your global Git config changes. Without the CLI, `git clone https://x:<token>@gitcove.example.com/my-org/api.git` works too. Any username works, and the token is the password.
 
 If your admin enabled it, run `cove client authorise` once while GitHub is up, so your comments and issues from an outage are posted under your own GitHub name. It prints a code to enter at github.com/login/device.
 
 ### Status
 
-`GET /status` is public and returns the mode, repo counts, the oldest sync time (the age of the copy), and whether GitHub's API and Git hosting answered the last probe. It shows no repo names or error text.
+`GET /status` is public. It returns the mode, how many changes are still on their way to GitHub, repo counts, and the oldest sync time (the age of the copy). For each health check path (`api`, `api-anon`, `git-https`, `git-ssh`) it gives whether the last check answered in time, the error rate over the window, and the last delay. It shows no repo names or error text. The agent reads it.
+
+The web interface's banner shows the mode, the number of changes on their way, and the copy's age. It warns when the copy may be out of date: older than three sync intervals, or its last sync failed. In normal mode it says when GitHub isn't answering on some path.
 
 ## How the mirror works
 
@@ -174,11 +194,11 @@ If your admin enabled it, run `cove client authorise` once while GitHub is up, s
 ## Development
 
 ```sh
-go test ./...                                                        # includes the four fault campaigns on 10 seeds
+go test ./...                                                        # includes the five fault campaigns on 10 seeds
 COVE_SEEDS=200 go test -race ./internal/mirror ./internal/replay     # the nightly campaigns
 ```
 
-`fakehub/` is a GitHub stand-in. It serves App authentication, repo and branch listing, Git smart HTTP including pushes, and PR creation. It refuses pushes the way GitHub refuses them from an App: protected branches, and workflow trees that match no branch tip. It logs every push, and it injects seeded faults: API or Git down, HTTP 500s, timeouts, pack responses cut off partway, and writes carried out but never answered. The campaign in `internal/mirror` runs rounds of random faults and GitHub-side changes (new commits, new and deleted branches, force-pushes). It checks every store with `git fsck` after each round, and checks that one clean cycle afterwards brings every served ref level with GitHub. To repeat a failing seed, run `COVE_SEEDS=N go test -run 'TestFaultCampaign/seed=K$' ./internal/mirror`.
+`fakehub/` is a GitHub stand-in. It serves App authentication, repo and branch listing, Git smart HTTP including pushes, and PR creation. It refuses pushes the way GitHub refuses them from an App: protected branches, and workflow trees that match no branch tip. It logs every push, and it injects seeded faults: API or Git down, HTTP 500s, timeouts, pack responses cut off partway, writes carried out but never answered, slow answers, SSH down, and failing installation tokens. It also answers SSH greetings, for the health check. The campaign in `internal/mirror` runs rounds of random faults and GitHub-side changes (new commits, new and deleted branches, force-pushes). It checks every store with `git fsck` after each round, and checks that one clean cycle afterwards brings every served ref level with GitHub. To repeat a failing seed, run `COVE_SEEDS=N go test -run 'TestFaultCampaign/seed=K$' ./internal/mirror`.
 
 The replay campaign in `internal/replay` (`TestReplayCampaign`) runs failovers in which developers push while GitHub is down and GitHub moves on. Meanwhile there are new commits, workflow changes, and developers pushing the same commits to GitHub themselves. Then it replays under faults, with GitCove killed at each crash point, GitHub moving between replay's fetch and its push, and up to three repeat outages with more pushes. After each run it checks:
 
@@ -203,19 +223,21 @@ Making replay resend after a restart, or apply edits without checking GitHub's v
 
 The PR campaign (`TestPullCampaign`) adds a third person and has them push, open PRs, review with line comments, reply, approve and merge locally, while on GitHub PR branches and `main` move, PRs are closed or merged, line comments are deleted and the linked account is revoked. Besides the checks above, it checks that replay never pushed to `main`, and that every approval or change request on GitHub came from the reviewer's own account, for their own review, at the commit they reviewed. `fakehub` enforces GitHub's rules here: a review's commit must be part of the PR, an approval must be for the PR's head and not by its author, and a reply needs its parent.
 
+`TestDegradedCampaign` runs the replay and PR campaigns in degraded mode. GitHub is slow and flaky instead of down (up to 40% errors, timeouts, lost responses, rate limits, delays, lagging listings), and replay runs in the background, with kills, while people push, open PRs, review and merge. The campaigns' checks then apply unchanged. `TestUnlandedPushWaits` stops a push between the hook recording it and Git moving the branch, which is where background replay could otherwise drop it. The tests in `internal/health` use a fake clock against `fakehub`'s delay, flapping, SSH-only, HTTPS-only and installation-token faults. They check that only a full outage starts failover, that the minimum run, cooldown and restart behave, and that degraded mode starts and ends as described. `TestFailoverEndToEnd` runs the real agent: it switches on failover, holds while GitCove restarts, and switches back.
+
 CI runs gofmt, `go vet`, golangci-lint, the tests with `-race`, and a Docker build. A nightly run uses 200 seeds.
 
 ## Code layout
 
 ```
-cmd/cove/            server and admin CLI in one binary
+cmd/cove/            server, admin CLI and developer agent in one binary
 internal/ghclient/   GitHub API behind one interface: App JWT, installation tokens, ETags, rate limiter, write budget, device flow
 internal/gitstore/   bare repos, fetch, served refs, push, pre-receive hook, local merges, diffs, git http-backend
 internal/store/      SQLite in WAL mode, migrations, mode, outbox, mirrored issues, PRs and reviews, tokens, audit log
 internal/mirror/     the sync loop (the plan's internal/sync): refs, branch protection, issues and comments
 internal/replay/     replay plan, history comparison, pushes and fallback PRs, replay of issues, comments, PRs, reviews and merges
 internal/auth/       people's GitHub tokens: device flow, encryption, refresh
-internal/health/     API and Git probes
+internal/health/     probes on four paths, alerts, automatic failover and degraded mode
 internal/web/        HTTP: Git for developers, the web interface, /status
 fakehub/             fault-injecting GitHub stand-in
 ```

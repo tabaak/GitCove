@@ -26,7 +26,7 @@ func (r *Replayer) waitsOnWork(ctx context.Context, it store.Item) (string, erro
 			return "", err
 		}
 		return fmt.Sprintf("waits for the push to %s, which is %s", it.Change.Head, state), nil
-	case it.Kind == "reply" && !strings.HasPrefix(it.Change.Parent, "c"):
+	case it.Kind == "reply" && !githubParent(it.Change.Parent):
 		review, _, err := r.Store.LocalComment(ctx, it.RepoID, it.Change.Parent)
 		if err != nil || review.State == "done" || review.State == "skipped" {
 			return "", err
@@ -36,10 +36,16 @@ func (r *Replayer) waitsOnWork(ctx context.Context, it store.Item) (string, erro
 	return "", nil
 }
 
+// githubParent says whether a reply's parent is a line comment from GitHub, "c<ID>", rather than one
+// in a queued review, "<op ID>/<index>". An op ID is hex, so it can start with "c" too.
+func githubParent(parent string) bool {
+	return strings.HasPrefix(parent, "c") && !strings.Contains(parent, "/")
+}
+
 // parentID is the GitHub ID of the line comment a reply answers, 0 if it has none.
 func (r *Replayer) parentID(ctx context.Context, it store.Item) (int64, error) {
-	if id, ok := strings.CutPrefix(it.Change.Parent, "c"); ok {
-		return strconv.ParseInt(id, 10, 64)
+	if githubParent(it.Change.Parent) {
+		return strconv.ParseInt(it.Change.Parent[1:], 10, 64)
 	}
 	_, id, err := r.Store.LocalComment(ctx, it.RepoID, it.Change.Parent)
 	return id, err
@@ -51,7 +57,7 @@ func (r *Replayer) quoteParent(ctx context.Context, it store.Item) (string, erro
 	var line int
 	if id, err := r.parentID(ctx, it); err != nil {
 		return "", err
-	} else if strings.HasPrefix(it.Change.Parent, "c") {
+	} else if githubParent(it.Change.Parent) {
 		n, _ := strconv.Atoi(it.Issue)
 		comments, err := r.Store.ReviewComments(ctx, it.RepoID, n)
 		if err != nil {

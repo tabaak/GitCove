@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // Mode is the instance mode (design section 6).
@@ -19,15 +20,23 @@ const (
 	Failover    Mode = "failover"
 	Reconciling Mode = "reconciling"
 	Replaying   Mode = "replaying"
+	Degraded    Mode = "degraded" // GitHub slow or flaky: writes are taken and replayed in the background (design 8.14)
 )
 
 // transitions lists, for each mode, the modes it may be entered from.
 var transitions = map[Mode][]Mode{
-	Failover:    {Normal, Reconciling, Replaying}, // Replaying: GitHub failed again during replay
+	Failover:    {Normal, Reconciling, Replaying, Degraded}, // Replaying: GitHub failed again during replay
 	Reconciling: {Failover},
 	Replaying:   {Reconciling, Normal}, // Normal: replaying items an admin re-queued
-	Normal:      {Replaying},           // only once no ref item is pending or sending
+	Normal:      {Replaying, Degraded}, // only once no item is pending or sending
+	Degraded:    {Normal},
 }
+
+// TakesWrites says whether pushes and web changes are accepted and queued.
+func (m Mode) TakesWrites() bool { return m == Failover || m == Degraded }
+
+// Replays says whether replay may write to GitHub.
+func (m Mode) Replays() bool { return m == Replaying || m == Degraded }
 
 var ErrWrongMode = errors.New("wrong mode")
 
@@ -77,6 +86,36 @@ func (s *Store) SetMode(ctx context.Context, actor string, to Mode) error {
 		}
 		return audit(tx, actor, "mode", fmt.Sprintf("%s -> %s", from, to))
 	})
+}
+
+// Unreplayed counts the changes still on their way to GitHub.
+func (s *Store) Unreplayed(ctx context.Context) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM outbox WHERE state IN ('pending', 'sending')").Scan(&n)
+	return n, err
+}
+
+// ModeHistory is what the health checks need to know about mode changes after a restart.
+type ModeHistory struct {
+	LastBy  string    // who made the latest change
+	LastAt  time.Time // and when
+	EndedAt time.Time // when actor last ended a failover or degraded mode; zero if never
+}
+
+func (s *Store) ModeHistory(ctx context.Context, actor string) (ModeHistory, error) {
+	var h ModeHistory
+	var by, at, ended sql.NullString
+	err := s.db.QueryRowContext(ctx, `SELECT (SELECT actor FROM audit_log WHERE action = 'mode' ORDER BY id DESC LIMIT 1),
+		(SELECT at FROM audit_log WHERE action = 'mode' ORDER BY id DESC LIMIT 1),
+		(SELECT at FROM audit_log WHERE action = 'mode' AND actor = ? AND (detail LIKE '% -> reconciling' OR detail LIKE '% -> normal')
+			ORDER BY id DESC LIMIT 1)`, actor).Scan(&by, &at, &ended)
+	if err != nil {
+		return h, err
+	}
+	h.LastBy = by.String
+	h.LastAt, _ = time.Parse(time.RFC3339, at.String)
+	h.EndedAt, _ = time.Parse(time.RFC3339, ended.String)
+	return h, nil
 }
 
 // AllowProtected turns on or off direct pushes to protected branches for the current failover.
@@ -254,12 +293,12 @@ type refPayload struct {
 }
 
 // RecordPush queues a push's branch updates, one transaction for all of them. It fails with
-// ErrWrongMode unless the instance is in failover, checked inside the same transaction.
+// ErrWrongMode unless the instance takes writes, checked inside the same transaction.
 func (s *Store) RecordPush(ctx context.Context, repoID int64, pusher string, updates []RefUpdate) error {
 	return s.tx(ctx, func(tx *sql.Tx) error {
 		if m, err := mode(tx); err != nil {
 			return err
-		} else if m != Failover {
+		} else if !m.TakesWrites() {
 			return fmt.Errorf("%w: mode is %s", ErrWrongMode, m)
 		}
 		for _, u := range updates {
@@ -345,7 +384,7 @@ func (s *Store) MarkSending(ctx context.Context, ids []int64, target string) err
 	return s.tx(ctx, func(tx *sql.Tx) error {
 		if m, err := mode(tx); err != nil {
 			return err
-		} else if m != Replaying {
+		} else if !m.Replays() {
 			return fmt.Errorf("%w: mode is %s", ErrWrongMode, m)
 		}
 		return updateItems(tx, ids, "state = 'sending', target = ?", target)

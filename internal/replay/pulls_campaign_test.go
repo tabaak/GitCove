@@ -31,12 +31,13 @@ func TestPullCampaign(t *testing.T) {
 	for seed := uint64(1); seed <= uint64(seeds); seed++ {
 		t.Run(fmt.Sprintf("seed=%d", seed), func(t *testing.T) {
 			t.Parallel()
-			pullCampaign(t, seed)
+			pullCampaign(t, seed, false)
 		})
 	}
 }
 
-func pullCampaign(t *testing.T, seed uint64) {
+// pullCampaign runs failovers, or with degraded set, rounds of degraded mode (see TestDegradedCampaign).
+func pullCampaign(t *testing.T, seed uint64, degraded bool) {
 	ctx := context.Background()
 	e := setup(t, seed, "app")
 	rng := mrand.New(mrand.NewPCG(seed, 13))
@@ -87,8 +88,13 @@ func pullCampaign(t *testing.T, seed uint64) {
 		if err := e.m.Cycle(ctx); err != nil {
 			t.Fatal(err)
 		}
-		e.hub.SetFaults(fakehub.Faults{APIDown: true, GitDown: true})
-		e.mode(t, store.Failover)
+		stop := func() {}
+		if degraded {
+			stop = e.degraded(t, rng)
+		} else {
+			e.hub.SetFaults(fakehub.Faults{APIDown: true, GitDown: true})
+			e.mode(t, store.Failover)
+		}
 		for range 4 + rng.IntN(8) {
 			refs, heads := prs()
 			what, on := rng.IntN(7), ""
@@ -103,7 +109,9 @@ func pullCampaign(t *testing.T, seed uint64) {
 			case 0: // push work and open a PR for it
 				b := pick([]string{"d1", "d2", "d3"})
 				work(t, dev, b, fmt.Sprintf("%s-%d.txt", b, rng.IntN(1e6)))
-				if out, err := push(dev, b); err != nil {
+				if out, err := push(dev, b); err != nil && degraded && !strings.Contains(out, "GitCove:") {
+					continue // a sync moved the branch on GitCove meanwhile
+				} else if err != nil {
 					t.Fatalf("push %s: %s", b, out)
 				}
 				if !opened[b] {
@@ -173,8 +181,11 @@ func pullCampaign(t *testing.T, seed uint64) {
 				}
 			}
 		}
-		e.hub.SetFaults(fakehub.Faults{})
-		e.mode(t, store.Reconciling, store.Replaying)
+		stop()
+		if !degraded {
+			e.hub.SetFaults(fakehub.Faults{})
+			e.mode(t, store.Reconciling, store.Replaying)
+		}
 	}
 
 	outage()
@@ -208,6 +219,7 @@ func pullCampaign(t *testing.T, seed uint64) {
 	}
 	e.hub.SetFaults(fakehub.Faults{})
 	slow()
+	time.Sleep(e.r.Grace) // pushes recorded but never landed are settled after it
 	for range 5 {
 		if err := e.r.Pass(ctx); err != nil {
 			t.Fatalf("clean pass: %v", err)
@@ -227,6 +239,12 @@ func pullCampaign(t *testing.T, seed uint64) {
 	}
 	t.Logf("%d outages, %d faulty passes, %d kills, %d local merges, items %v", outages, passes, kills, merges, states)
 
+	refOps := map[string]bool{}
+	for _, its := range e.items(t) {
+		for _, it := range its {
+			refOps[it.OpID] = true
+		}
+	}
 	posted := map[string]int{}
 	opOf := func(body string) string {
 		_, after, ok := strings.Cut(body, "<!-- gitcove:op=")
@@ -240,11 +258,17 @@ func pullCampaign(t *testing.T, seed uint64) {
 		if op == "" {
 			return store.Item{}
 		}
+		posted[op]++
+		if refOps[op] { // a fallback PR for diverged pushes, posted by the App
+			if posted[op] > 1 || author != fakehub.Bot {
+				t.Errorf("fallback PR for push %s: copy %d, by %s", op, posted[op], author)
+			}
+			return store.Item{}
+		}
 		it, ok := byOp[op]
 		if !ok {
 			t.Errorf("marker %s on a %s belongs to no item", op, what)
 		}
-		posted[op]++
 		if author != fakehub.Bot && (author != "alice-gh" || it.TokenID != alice) {
 			t.Errorf("item %d by %s posted as %s", it.ID, names[it.TokenID], author)
 		}

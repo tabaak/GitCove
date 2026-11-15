@@ -20,6 +20,7 @@ import (
 	"hash/fnv"
 	"io"
 	mrand "math/rand/v2"
+	"net"
 	"net/http"
 	"net/http/cgi"
 	"net/http/httptest"
@@ -48,6 +49,9 @@ type Faults struct {
 	LostRate         float64       // carry out a write (a push or any API write), then drop the connection unanswered
 	RateLimitRate    float64       // refuse an API write with a secondary rate limit and Retry-After: 1
 	ListingLag       time.Duration // hide each issue or comment created through the API from listings for up to this long
+	Delay            time.Duration // answer every request, and the SSH greeting, this late
+	SSHDown          bool          // drop SSH connections without a greeting
+	TokenDown        bool          // answer 500 when the App asks for an installation token
 }
 
 // The App's OAuth client ID and secret, for the device flow and refreshing user tokens.
@@ -75,6 +79,7 @@ type Hub struct {
 	AppID string
 	Key   *rsa.PrivateKey // the App's private key, for the client under test
 	Root  string          // bare repos at Root/<org>/<name>.git
+	SSH   string          // host:port of an SSH greeting, for health probes; it serves nothing else
 
 	NotModified atomic.Int64  // 304 responses sent
 	AccessTTL   time.Duration // lifetime of user access tokens, default 8 hours
@@ -116,7 +121,13 @@ func New(t testing.TB, seed uint64) *Hub {
 	mux.HandleFunc("GET /orgs/{org}/installation", h.app(h.installation))
 	mux.HandleFunc("POST /app/installations/{id}/access_tokens", h.app(h.accessToken))
 	mux.HandleFunc("GET /installation/repositories", h.inst(h.repos))
-	mux.HandleFunc("GET /rate_limit", h.inst(h.rateLimit))
+	mux.HandleFunc("GET /rate_limit", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "" { // GitHub answers this without signing in, too
+			h.rateLimit(w, r)
+			return
+		}
+		h.inst(h.rateLimit)(w, r)
+	})
 	mux.HandleFunc("GET /repos/{org}/{repo}/branches", h.inst(h.repo(h.branches)))
 	mux.HandleFunc("GET /repos/{org}/{repo}/pulls", h.inst(h.repo(h.listPRs)))
 	mux.HandleFunc("POST /repos/{org}/{repo}/pulls", h.inst(h.repo(h.createPR)))
@@ -144,6 +155,30 @@ func New(t testing.TB, seed uint64) *Hub {
 	mux.HandleFunc("/{org}/{repo}/{rest...}", h.serveGit)
 	h.Server = httptest.NewServer(h.withFaults(mux))
 	t.Cleanup(func() { h.CloseClientConnections(); h.Close() }) // hung timeout-fault requests would block Close
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	h.SSH = ln.Addr().String()
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			h.mu.Lock()
+			f := h.faults
+			h.mu.Unlock()
+			go func() {
+				defer conn.Close()
+				time.Sleep(f.Delay)
+				if !f.SSHDown {
+					_, _ = io.WriteString(conn, "SSH-2.0-fakehub\r\n")
+				}
+			}()
+		}
+	}()
 	return h
 }
 
@@ -156,7 +191,11 @@ func (h *Hub) withFaults(next http.Handler) http.Handler {
 		f, roll, cut, limited := h.faults, h.rng.Float64(), h.rng.Float64(), h.rng.Float64()
 		cutAt := 64 + h.rng.IntN(4096)
 		h.mu.Unlock()
+		time.Sleep(f.Delay)
 		switch {
+		case f.TokenDown && strings.HasSuffix(r.URL.Path, "/access_tokens"):
+			http.Error(w, `{"message":"Server Error"}`, http.StatusInternalServerError)
+			return
 		case isGit && f.GitDown, !isGit && f.APIDown:
 			conn, _, err := w.(http.Hijacker).Hijack()
 			if err == nil {
@@ -527,13 +566,22 @@ func (h *Hub) Commit(t testing.TB, name, branch string) string {
 	rand.Read(b) // incompressible, so pack responses are big enough to cut
 	blob := h.gitIn(t, dir, base64.StdEncoding.EncodeToString(b), "hash-object", "-w", "--stdin")
 	tree := h.gitIn(t, dir, fmt.Sprintf("100644 blob %s\tdata-%s\n", blob, blob[:8]), "mktree")
-	args := []string{"commit-tree", tree, "-m", "commit " + blob[:8]}
-	if parent, err := exec.Command(h.git, "-C", dir, "rev-parse", "--verify", "-q", "refs/heads/"+branch).Output(); err == nil {
-		args = append(args, "-p", strings.TrimSpace(string(parent)))
+	for try := 1; ; try++ { // compare-and-swap, so a push landing meanwhile isn't undone; "" as the old value means a new branch
+		args := []string{"commit-tree", tree, "-m", "commit " + blob[:8]}
+		out, err := exec.Command(h.git, "-C", dir, "rev-parse", "--verify", "-q", "refs/heads/"+branch).Output()
+		parent := strings.TrimSpace(string(out))
+		if err == nil {
+			args = append(args, "-p", parent)
+		}
+		sha := h.gitT(t, dir, args...)
+		if try == 50 {
+			h.gitT(t, dir, "update-ref", "refs/heads/"+branch, sha, parent) // fails the test with git's reason
+			return sha
+		}
+		if exec.Command(h.git, "-C", dir, "update-ref", "refs/heads/"+branch, sha, parent).Run() == nil {
+			return sha
+		}
 	}
-	sha := h.gitT(t, dir, args...)
-	h.gitT(t, dir, "update-ref", "refs/heads/"+branch, sha)
-	return sha
 }
 
 // CommitFile commits path with content on top of branch's tree and returns the commit ID.

@@ -2,29 +2,38 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"html"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"runtime"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // clientCmd sets up a developer machine. It only touches the developer's global Git config:
-// cove.url and cove.org, the token in Git's credential helper, and the url.insteadOf rule.
+// cove.url and cove.org, the token in Git's credential helper, and the url.insteadOf rule; and
+// the agent's service file.
 func clientCmd(args []string) error {
 	if len(args) == 0 {
-		return errors.New("client: want setup, on, off or authorise")
+		return errors.New("client: want setup, on, off, agent or authorise")
 	}
 	switch args[0] {
 	case "setup":
 		fs := flag.NewFlagSet("client setup", flag.ContinueOnError)
 		base := fs.String("url", "", "GitCove's address, e.g. https://gitcove.example.com")
 		org := fs.String("org", "", "the GitHub organisation GitCove mirrors")
+		withAgent := fs.Bool("agent", true, "install the agent, which switches Git to GitCove and back by itself")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -61,34 +70,171 @@ func clientCmd(args []string) error {
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("git credential approve: %v: %s", err, out)
 		}
-		fmt.Println("Set up. When failover starts, run `cove client on`; afterwards, `cove client off`.")
+		if !*withAgent {
+			fmt.Println("Set up. When failover starts, run `cove client on`; afterwards, `cove client off`.")
+			return nil
+		}
+		if err := installAgent(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: the agent isn't installed (%v).\nRun `cove client agent` at login yourself, or `cove client on` and `cove client off` by hand.\n", err)
+			return nil
+		}
+		fmt.Println("Set up. The agent switches Git to GitCove when failover starts and back when it ends.")
 		return nil
 	case "on", "off":
-		base, err1 := gitOut("config", "--global", "--get", "cove.url")
-		org, err2 := gitOut("config", "--global", "--get", "cove.org")
-		if err1 != nil || err2 != nil {
-			return errors.New("client: run `cove client setup` first")
+		base, org, err := clientConfig()
+		if err != nil {
+			return err
 		}
-		key := "url." + base + "/" + org + "/.insteadOf"
-		// Exit code 5 means there was nothing to unset.
-		if _, err := gitOut("config", "--global", "--unset-all", key); err != nil && exitCode(err) != 5 {
+		if err := setRule(base, org, args[0] == "on"); err != nil {
 			return err
 		}
 		if args[0] == "off" {
 			fmt.Println("Git goes to GitHub again.")
 			return nil
 		}
-		for _, from := range []string{"https://github.com/" + org + "/", "git@github.com:" + org + "/", "ssh://git@github.com/" + org + "/"} {
-			if _, err := gitOut("config", "--global", "--add", key, from); err != nil {
-				return err
-			}
-		}
 		fmt.Printf("Git now sends %s's GitHub repos to %s. Existing clones work unchanged.\n", org, base)
 		return nil
+	case "agent":
+		fs := flag.NewFlagSet("client agent", flag.ContinueOnError)
+		every := fs.Duration("every", 30*time.Second, "how often to ask GitCove for its mode")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		return agent(*every)
 	case "authorise", "authorize":
 		return authorise()
 	}
 	return fmt.Errorf("client: unknown subcommand %q", args[0])
+}
+
+func clientConfig() (base, org string, err error) {
+	base, err1 := gitOut("config", "--global", "--get", "cove.url")
+	org, err2 := gitOut("config", "--global", "--get", "cove.org")
+	if err1 != nil || err2 != nil {
+		return "", "", errors.New("client: run `cove client setup` first")
+	}
+	return base, org, nil
+}
+
+// setRule turns on or off the url.insteadOf rule that sends Git for org's GitHub repos to GitCove.
+func setRule(base, org string, on bool) error {
+	key := "url." + base + "/" + org + "/.insteadOf"
+	// Exit code 5 means there was nothing to unset.
+	if _, err := gitOut("config", "--global", "--unset-all", key); err != nil && exitCode(err) != 5 {
+		return err
+	}
+	if !on {
+		return nil
+	}
+	for _, from := range []string{"https://github.com/" + org + "/", "git@github.com:" + org + "/", "ssh://git@github.com/" + org + "/"} {
+		if _, err := gitOut("config", "--global", "--add", key, from); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// agent asks GitCove for its mode every interval, and turns the rule on in failover and degraded
+// mode and off otherwise. It acts only when that answer changes, so `cove client on` or `off` by
+// hand holds until the next switch. If GitCove can't be reached it changes nothing: a developer
+// keeps working where they were rather than being split from the team by a network blip.
+func agent(every time.Duration) error {
+	base, org, err := clientConfig()
+	if err != nil {
+		return err
+	}
+	hc := &http.Client{Timeout: 10 * time.Second}
+	applied, unreachable := "", false
+	for ; ; time.Sleep(every) {
+		mode, err := remoteMode(hc, base)
+		if err != nil {
+			if !unreachable {
+				log.Printf("can't reach GitCove, changing nothing: %v", err)
+			}
+			unreachable = true
+			continue
+		}
+		unreachable = false
+		want := map[bool]string{true: "on", false: "off"}[mode == "failover" || mode == "degraded"]
+		if want == applied {
+			continue
+		}
+		if err := setRule(base, org, want == "on"); err != nil {
+			log.Printf("switching Git %s: %v", want, err)
+			continue
+		}
+		applied = want
+		log.Printf("GitCove is in %s mode: Git for %s goes to %s", mode, org, map[string]string{"on": base, "off": "GitHub"}[want])
+	}
+}
+
+func remoteMode(hc *http.Client, base string) (string, error) {
+	resp, err := hc.Get(base + "/status")
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var st struct{ Mode string }
+	if err := json.NewDecoder(resp.Body).Decode(&st); err != nil || resp.StatusCode != http.StatusOK || st.Mode == "" {
+		return "", fmt.Errorf("/status: %s %v", resp.Status, err)
+	}
+	return st.Mode, nil
+}
+
+// installAgent runs `cove client agent` at login: a launchd agent on macOS, a systemd user
+// service on Linux.
+func installAgent() error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	var path, body string
+	var cmds [][]string
+	switch runtime.GOOS {
+	case "darwin":
+		path = filepath.Join(home, "Library", "LaunchAgents", "dev.gitcove.agent.plist")
+		body = fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>dev.gitcove.agent</string>
+  <key>ProgramArguments</key><array><string>%s</string><string>client</string><string>agent</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardErrorPath</key><string>%s</string>
+</dict></plist>
+`, html.EscapeString(exe), html.EscapeString(filepath.Join(home, "Library", "Logs", "cove-agent.log")))
+		domain := "gui/" + strconv.Itoa(os.Getuid())
+		cmds = [][]string{{"launchctl", "bootout", domain + "/dev.gitcove.agent"}, {"launchctl", "bootstrap", domain, path}}
+	case "linux":
+		cfg, err := os.UserConfigDir()
+		if err != nil {
+			return err
+		}
+		path = filepath.Join(cfg, "systemd", "user", "cove-agent.service")
+		body = fmt.Sprintf("[Unit]\nDescription=GitCove agent: sends Git to GitCove during GitHub outages\n\n"+
+			"[Service]\nExecStart=%q client agent\nRestart=always\n\n[Install]\nWantedBy=default.target\n", exe)
+		cmds = [][]string{{"systemctl", "--user", "daemon-reload"}, {"systemctl", "--user", "enable", "cove-agent"},
+			{"systemctl", "--user", "restart", "cove-agent"}}
+	default:
+		return fmt.Errorf("no service manager known for %s", runtime.GOOS)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		return err
+	}
+	for i, c := range cmds {
+		out, err := exec.Command(c[0], c[1:]...).CombinedOutput()
+		if err != nil && (runtime.GOOS != "darwin" || i != 0) { // bootout fails when it wasn't running yet
+			return fmt.Errorf("%s: %v: %s", strings.Join(c, " "), err, out)
+		}
+	}
+	return nil
 }
 
 // coveRequest makes a POST to GitCove with the developer's token from Git's credential helper.

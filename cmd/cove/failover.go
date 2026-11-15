@@ -40,7 +40,7 @@ func failoverCmd(cfg config, args []string) error {
 		if err := st.SetMode(ctx, cliActor(), store.Failover); err != nil {
 			return err
 		}
-		fmt.Println("Failover started: GitCove accepts pushes. Developers switch with `cove client on`.")
+		fmt.Println("Failover started: GitCove accepts pushes. Developers' agents switch them to GitCove; without one, `cove client on`.")
 		return nil
 	case "end":
 		a, err := build(cfg)
@@ -51,7 +51,7 @@ func failoverCmd(cfg config, args []string) error {
 		if err := a.store.SetMode(ctx, cliActor(), store.Reconciling); err != nil {
 			return err
 		}
-		fmt.Println("Failover ended: pushes are refused again. Developers switch back with `cove client off`.")
+		fmt.Println("Failover ended: pushes are refused again. Developers' agents switch them back to GitHub; without one, `cove client off`.")
 		return printPlan(ctx, a)
 	case "allow-protected":
 		on, err := onOff(args[1:], "failover allow-protected")

@@ -53,8 +53,11 @@ type page struct {
 	User     store.Token
 	Repo     store.Repo
 	Mode     store.Mode
-	Writable bool   // in failover: changes are taken
-	Age      string // how old GitCove's copy of the repo is
+	Writable bool     // in failover or degraded mode: changes are taken
+	Age      string   // how old GitCove's copy of the repo is
+	Stale    bool     // the copy may be out of date: old, or its last sync failed
+	Down     []string // GitHub's paths that failed the last health check
+	OnTheWay int      // changes still to replay to GitHub
 	Data     any
 }
 
@@ -97,14 +100,26 @@ func (s *Server) ui(h func(http.ResponseWriter, *http.Request, *page) error) htt
 			s.fail(w, err)
 			return
 		}
-		p.Writable = p.Mode == store.Failover
+		p.Writable = p.Mode.TakesWrites()
+		if p.OnTheWay, err = s.Store.Unreplayed(ctx); err != nil {
+			s.fail(w, err)
+			return
+		}
+		if s.Health != nil {
+			for name, res := range s.Health.Status() {
+				if !res.OK {
+					p.Down = append(p.Down, name)
+				}
+			}
+			slices.Sort(p.Down)
+		}
 		if owner := r.PathValue("owner"); owner != "" {
 			full := owner + "/" + r.PathValue("repo")
 			if p.Repo, err = s.Store.RepoByName(ctx, owner, r.PathValue("repo")); err != nil || !slices.Contains(t.Repos, full) {
 				http.NotFound(w, r) // the same answer for a repo without access, so names can't be probed
 				return
 			}
-			p.Age = age(p.Repo.SyncedAt)
+			p.Age, p.Stale = s.age(p.Repo)
 		}
 		err = h(w, r, p)
 		var bad badRequest
@@ -112,7 +127,7 @@ func (s *Server) ui(h func(http.ResponseWriter, *http.Request, *page) error) htt
 		case errors.As(err, &bad):
 			http.Error(w, string(bad), http.StatusBadRequest)
 		case errors.Is(err, store.ErrWrongMode):
-			http.Error(w, "GitCove takes changes only during a failover. Make them on GitHub.", http.StatusConflict)
+			http.Error(w, "GitCove takes changes only during a failover or degraded mode. Make them on GitHub.", http.StatusConflict)
 		case errors.Is(err, store.ErrNotFound):
 			http.NotFound(w, r)
 		case err != nil:
@@ -125,12 +140,13 @@ type badRequest string
 
 func (b badRequest) Error() string { return string(b) }
 
-func age(synced string) string {
-	t, err := time.Parse(time.RFC3339Nano, synced)
+func (s *Server) age(r store.Repo) (string, bool) {
+	t, err := time.Parse(time.RFC3339Nano, r.SyncedAt)
 	if err != nil {
-		return "never synced"
+		return "never synced", true
 	}
-	return "copy of GitHub from " + time.Since(t).Round(time.Second).String() + " ago"
+	ago := time.Since(t)
+	return "copy of GitHub from " + ago.Round(time.Second).String() + " ago", r.SyncError != "" || s.StaleAfter > 0 && ago > s.StaleAfter
 }
 
 func (s *Server) render(w http.ResponseWriter, name string, p *page) error {
@@ -457,7 +473,7 @@ func (s *Server) act(w http.ResponseWriter, r *http.Request, p *page) error {
 		}
 		kinds, changes = append(kinds, "reply"), append(changes, c)
 	case "merge":
-		if p.Mode != store.Failover {
+		if !p.Mode.TakesWrites() {
 			return store.ErrWrongMode
 		}
 		if err := s.merge(r, p, th); err != nil {

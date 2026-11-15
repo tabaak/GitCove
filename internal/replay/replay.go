@@ -33,6 +33,7 @@ type Replayer struct {
 
 	Users      *auth.Users   // people's GitHub tokens; nil means the App posts everything
 	MarkerWait time.Duration // how long after a write its marker must show up in listings; 0 means 15s (spike M)
+	Grace      time.Duration // how long a recorded push may take to land on GitCove; 0 means a minute
 
 	paused bool // alert once per pause, not once per pass
 }
@@ -104,7 +105,9 @@ func (r *Replayer) Plan(ctx context.Context) (actions []Action, errs []error, er
 			if err := r.decide(ctx, pol, &a); err != nil {
 				return nil, nil, fmt.Errorf("%s %s: %w", repo.FullName(), b, err)
 			}
-			actions = append(actions, a)
+			if len(a.Items) > 0 {
+				actions = append(actions, a)
+			}
 		}
 	}
 	return actions, errs, nil
@@ -118,6 +121,9 @@ func (r *Replayer) decide(ctx context.Context, pol store.Policy, a *Action) erro
 		return err
 	}
 	if a.GitHub, err = r.Git.Ref(ctx, id, gitstore.GitHubHeads+a.Branch); err != nil {
+		return err
+	}
+	if err := r.dropUnlanded(ctx, a); err != nil {
 		return err
 	}
 	if a.Tip == "" {
@@ -175,6 +181,33 @@ func (r *Replayer) decide(ctx context.Context, pol store.Policy, a *Action) erro
 		a.Reason = "its .github/workflows differs from every branch on GitHub, so GitHub would refuse the push. " +
 			"Merge the current target branch into it and push again"
 	}
+	return nil
+}
+
+// dropUnlanded leaves out items whose push was recorded but hasn't moved the branch yet. The hook
+// records a push before git moves the ref, and in degraded mode replay runs meanwhile: finishing
+// such an item as "nothing to push" would stop holding the branch, and its commits would be
+// lost. After the grace period a push that hasn't landed has failed, and is settled as usual.
+// shortcut: a push whose ref moves more than the grace period after its hook ran would still be
+// lost; if that's ever seen, record the outcome from git (a reference-transaction hook) instead.
+func (r *Replayer) dropUnlanded(ctx context.Context, a *Action) error {
+	grace := cmp.Or(r.Grace, time.Minute)
+	var keep []store.RefItem
+	for _, it := range a.Items {
+		landed := false
+		if a.Tip != "" {
+			// An error means the commit isn't in the repo yet (git keeps a push's objects aside until its refs move).
+			landed, _ = r.Git.IsAncestor(ctx, a.Repo.GitHubID, it.New, a.Tip)
+		}
+		created, err := time.Parse(time.RFC3339, it.Created)
+		if err != nil {
+			return fmt.Errorf("outbox %d: %w", it.ID, err)
+		}
+		if landed || time.Since(created) > grace {
+			keep = append(keep, it)
+		}
+	}
+	a.Items = keep
 	return nil
 }
 
@@ -279,16 +312,21 @@ func prBody(a Action) string {
 		"<!-- gitcove:op=%s -->\n", a.Branch, strings.Join(pushers, ", "), a.Reason, a.Tip, a.Items[0].OpID)
 }
 
-// Pass replays everything queued, if the instance is replaying. On an error (GitHub failing
-// again, say) it alerts and returns; items keep their state and the next pass resumes them.
-// Once nothing is left it returns the instance to normal.
+// Pass replays everything queued, if the instance is replaying or degraded. On an error (GitHub
+// failing again, say) it alerts and returns; items keep their state and the next pass resumes
+// them. Once nothing is left it returns a replaying instance to normal. Degraded mode is left by
+// the health checks instead, once GitHub has been healthy for a while.
 func (r *Replayer) Pass(ctx context.Context) error {
-	if m, err := r.Store.Mode(ctx); err != nil || m != store.Replaying {
+	m, err := r.Store.Mode(ctx)
+	if err != nil || !m.Replays() {
 		return err
 	}
-	err := r.pass(ctx)
+	err = r.pass(ctx)
 	if errors.Is(err, errStopped) {
 		return nil
+	}
+	if m == store.Degraded {
+		return err // failing passes are expected there, and the health checks alert about GitHub
 	}
 	if err != nil {
 		if !r.paused && r.Alert != nil {

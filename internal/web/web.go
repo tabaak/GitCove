@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/tabaak/gitcove/internal/auth"
 	"github.com/tabaak/gitcove/internal/gitstore"
@@ -22,6 +23,8 @@ type Server struct {
 	Health *health.Checker
 	Users  *auth.Users // nil if GitCove doesn't keep GitHub user tokens
 	Log    *slog.Logger
+
+	StaleAfter time.Duration // a copy older than this gets a warning; 0: only a failed sync does
 }
 
 func (s *Server) Handler() http.Handler {
@@ -81,8 +84,8 @@ func (s *Server) git(w http.ResponseWriter, r *http.Request) {
 		if mode, err := s.Store.Mode(ctx); err != nil {
 			s.fail(w, err)
 			return
-		} else if mode != store.Failover {
-			http.Error(w, "GitCove accepts pushes only during failover; push to GitHub", http.StatusForbidden)
+		} else if !mode.TakesWrites() {
+			http.Error(w, "GitCove accepts pushes only during failover or degraded mode; push to GitHub", http.StatusForbidden)
 			return
 		}
 	}
@@ -97,18 +100,20 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	st := struct {
-		Mode         string `json:"mode"`
-		Repos        int    `json:"repos"`
-		NeverSynced  int    `json:"repos_never_synced"`
-		SyncErrors   int    `json:"repos_with_sync_errors"`
-		OldestSynced string `json:"oldest_synced_at,omitempty"` // the age of the copy
-		GitHub       struct {
-			API health.Result `json:"api"`
-			Git health.Result `json:"git"`
-		} `json:"github"`
+		Mode         string                   `json:"mode"`
+		Unreplayed   int                      `json:"unreplayed"` // changes still on their way to GitHub
+		Repos        int                      `json:"repos"`
+		NeverSynced  int                      `json:"repos_never_synced"`
+		SyncErrors   int                      `json:"repos_with_sync_errors"`
+		OldestSynced string                   `json:"oldest_synced_at,omitempty"` // the age of the copy
+		GitHub       map[string]health.Result `json:"github"`                     // by probe: api, api-anon, git-https, git-ssh
 	}{Repos: len(repos)}
 	mode, err := s.Store.Mode(r.Context())
 	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if st.Unreplayed, err = s.Store.Unreplayed(r.Context()); err != nil {
 		s.fail(w, err)
 		return
 	}
@@ -124,7 +129,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 			st.SyncErrors++
 		}
 	}
-	st.GitHub.API, st.GitHub.Git = s.Health.Status()
+	st.GitHub = s.Health.Status()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(st)
 }

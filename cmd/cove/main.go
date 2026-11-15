@@ -50,8 +50,11 @@ const usage = `usage: cove <command>
   repo pr-only OWNER/REPO on|off           send default and deploy branch work as PRs (default on)
   repo approvals OWNER/REPO N              approvals a PR needs before it can be merged on GitCove (default 1)
 
-  client setup -url URL -org ORG           on a developer machine: save GitCove's address and token (COVE_TOKEN or stdin)
-  client on | client off                   send Git for the organisation to GitCove, or back to GitHub
+  client setup -url URL -org ORG [-agent=false]
+                                           on a developer machine: save GitCove's address and token (COVE_TOKEN or stdin),
+                                           and install the agent as a launchd or systemd user service
+  client on | client off                   send Git for the organisation to GitCove, or back to GitHub, by hand
+  client agent [-every 30s]                what setup installs: switches Git to GitCove in failover and degraded mode, and back
   client authorise                         while GitHub is up: let GitCove post your outage work under your GitHub name
   pr create [-title T] [-body B] [-base BRANCH]
                                            during a failover, in a clone: open a PR on GitCove from the current branch
@@ -117,6 +120,9 @@ type config struct {
 	AlertWebhook                      string
 	SyncEvery, HealthEvery, FetchTime time.Duration
 	ReplayEvery                       time.Duration
+	SSH                               string        // GitHub's SSH server for the health probe; "" skips it
+	AutoFailover                      time.Duration // 0: failover only by hand
+	Degraded                          bool
 }
 
 func loadConfig() (config, error) {
@@ -136,6 +142,16 @@ func loadConfig() (config, error) {
 		UserKeyFile:      os.Getenv("COVE_USER_KEY_FILE"),
 
 		AlertWebhook: os.Getenv("COVE_ALERT_WEBHOOK"),
+		SSH:          env("COVE_GITHUB_SSH", "github.com:22"),
+	}
+	if c.SSH == "off" {
+		c.SSH = ""
+	}
+	switch v := env("COVE_DEGRADED", "off"); v {
+	case "on", "off":
+		c.Degraded = v == "on"
+	default:
+		return c, fmt.Errorf("COVE_DEGRADED: want on or off, got %q", v)
 	}
 	var err error
 	for _, d := range []struct {
@@ -147,6 +163,7 @@ func loadConfig() (config, error) {
 		{&c.HealthEvery, "COVE_HEALTH_INTERVAL", "30s"},
 		{&c.FetchTime, "COVE_FETCH_TIMEOUT", "10m"},
 		{&c.ReplayEvery, "COVE_REPLAY_INTERVAL", "30s"},
+		{&c.AutoFailover, "COVE_AUTO_FAILOVER", "0"},
 	} {
 		if *d.dst, err = time.ParseDuration(env(d.name, d.def)); err != nil {
 			return c, fmt.Errorf("%s: %w", d.name, err)
@@ -214,8 +231,9 @@ func build(cfg config) (*app, error) {
 		mirror: m,
 		users:  users,
 		replay: &replay.Replayer{GH: gh, Store: st, Git: gs, Mirror: m, Log: log, Alert: alerter(cfg.AlertWebhook, log), Users: users},
-		health: &health.Checker{GH: gh, HTTP: &http.Client{Timeout: 10 * time.Second}, GitURL: gs.GitURL, Store: st, Log: log},
-		log:    log,
+		health: &health.Checker{GH: gh, HTTP: &http.Client{Timeout: 10 * time.Second}, API: cfg.API, GitURL: gs.GitURL, SSHAddr: cfg.SSH,
+			Store: st, Log: log, Alert: alerter(cfg.AlertWebhook, log), Auto: health.Auto{FailoverAfter: cfg.AutoFailover, Degraded: cfg.Degraded}},
+		log: log,
 	}, nil
 }
 
@@ -284,8 +302,8 @@ func serve(cfg config) error {
 	go a.health.Run(ctx, cfg.HealthEvery, 15*time.Second)
 
 	// No write timeout: clones of large repos can take a long time.
-	srv := &http.Server{Addr: cfg.Listen, Handler: (&web.Server{Store: a.store, Git: a.git, Health: a.health, Users: a.users, Log: a.log}).Handler(),
-		ReadHeaderTimeout: 10 * time.Second}
+	ws := &web.Server{Store: a.store, Git: a.git, Health: a.health, Users: a.users, Log: a.log, StaleAfter: 3 * cfg.SyncEvery}
+	srv := &http.Server{Addr: cfg.Listen, Handler: ws.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
 		shut, cancel := context.WithTimeout(context.Background(), 30*time.Second)

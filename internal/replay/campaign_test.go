@@ -29,14 +29,16 @@ func TestReplayCampaign(t *testing.T) {
 	for seed := uint64(1); seed <= uint64(seeds); seed++ {
 		t.Run(fmt.Sprintf("seed=%d", seed), func(t *testing.T) {
 			t.Parallel()
-			replayCampaign(t, seed)
+			replayCampaign(t, seed, false)
 		})
 	}
 }
 
 var errKilled = errors.New("killed")
 
-func replayCampaign(t *testing.T, seed uint64) {
+// replayCampaign runs failovers, or with degraded set, rounds of degraded mode: GitHub flaky
+// instead of down, and replay running while developers push (see TestDegradedCampaign).
+func replayCampaign(t *testing.T, seed uint64, degraded bool) {
 	ctx := context.Background()
 	e := setup(t, seed, "app")
 	rng := mrand.New(mrand.NewPCG(seed, 7))
@@ -57,14 +59,20 @@ func replayCampaign(t *testing.T, seed uint64) {
 	quick := func() { e.gh.HTTP.Timeout, e.m.FetchTimeout = 500*time.Millisecond, 3*time.Second }
 	slow := func() { e.gh.HTTP.Timeout, e.m.FetchTimeout = 5*time.Second, 30*time.Second }
 
+	refused := 0
 	outage := func() {
 		e.hub.SetFaults(fakehub.Faults{})
 		slow()
 		if err := e.m.Cycle(ctx); err != nil { // the regular sync, before GitHub fails
 			t.Fatal(err)
 		}
-		e.hub.SetFaults(fakehub.Faults{APIDown: true, GitDown: true})
-		e.mode(t, store.Failover)
+		stop := func() {}
+		if degraded {
+			stop = e.degraded(t, rng)
+		} else {
+			e.hub.SetFaults(fakehub.Faults{APIDown: true, GitDown: true})
+			e.mode(t, store.Failover)
+		}
 		for range 2 + rng.IntN(5) {
 			b := branches[rng.IntN(len(branches))]
 			file := fmt.Sprintf("%s-%d.txt", b, rng.IntN(1e6))
@@ -75,6 +83,8 @@ func replayCampaign(t *testing.T, seed uint64) {
 			if out, err := push(dev, b); err == nil {
 				accepted[sha] = b
 				delete(copied, b)
+			} else if degraded && !strings.Contains(out, "GitCove:") {
+				refused++ // a sync moved the branch on GitCove meanwhile; the developer pulls and pushes again
 			} else if !(protectMain && b == "main" && strings.Contains(out, "protected")) {
 				t.Fatalf("push to %s refused: %s", b, out)
 			}
@@ -86,6 +96,9 @@ func replayCampaign(t *testing.T, seed uint64) {
 			case 2:
 				e.hub.CommitFile(t, "app", "main", ".github/workflows/ci.yml", fmt.Sprint(rng.IntN(1e6)))
 			case 3: // a developer pushes a GitCove branch to GitHub themselves, if GitHub would take it
+				if degraded {
+					break // replay may push it meanwhile, so the checks below for this case can't tell who was first
+				}
 				b := branches[rng.IntN(len(branches))]
 				if b == "main" && protectMain {
 					break
@@ -107,8 +120,11 @@ func replayCampaign(t *testing.T, seed uint64) {
 				}
 			}
 		}
-		e.hub.SetFaults(fakehub.Faults{})
-		e.mode(t, store.Reconciling, store.Replaying)
+		stop()
+		if !degraded {
+			e.hub.SetFaults(fakehub.Faults{})
+			e.mode(t, store.Reconciling, store.Replaying)
+		}
 	}
 
 	outage()
@@ -146,6 +162,7 @@ func replayCampaign(t *testing.T, seed uint64) {
 	}
 	e.hub.SetFaults(fakehub.Faults{})
 	slow()
+	time.Sleep(e.r.Grace) // pushes recorded but never landed are settled after it
 	for i := 0; i < 5; i++ {
 		if m, _ := e.st.Mode(ctx); m == store.Normal {
 			break
@@ -154,13 +171,16 @@ func replayCampaign(t *testing.T, seed uint64) {
 			t.Fatalf("clean pass: %v", err)
 		}
 	}
+	if degraded {
+		e.mode(t, store.Normal) // what the health checks do once GitHub is healthy and nothing is left
+	}
 	if m, _ := e.st.Mode(ctx); m != store.Normal {
 		t.Fatalf("mode %s after replay", m)
 	}
 	if err := e.m.Cycle(ctx); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("%d outages, %d faulty passes, %d kills, %d pushes accepted, %d PRs", outages, passes, kills, len(accepted), len(e.hub.PRs("app")))
+	t.Logf("%d outages, %d faulty passes, %d kills, %d pushes accepted, %d refused, %d PRs", outages, passes, kills, len(accepted), refused, len(e.hub.PRs("app")))
 
 	// 1. Nothing lost (R2): every item is final, and every pushed commit is on GitHub or kept in a conflict.
 	held := map[string]bool{}

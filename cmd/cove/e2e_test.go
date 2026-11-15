@@ -58,7 +58,7 @@ func start(t *testing.T) *e2e {
 
 	env := append(os.Environ(), "COVE_ORG="+hub.Org, "COVE_APP_ID="+hub.AppID, "COVE_APP_KEY_FILE="+keyFile,
 		"COVE_APP_CLIENT_ID="+fakehub.ClientID, "COVE_APP_CLIENT_SECRET_FILE="+secretFile, "COVE_USER_KEY_FILE="+userKeyFile,
-		"COVE_DATA="+filepath.Join(dir, "data"), "COVE_LISTEN="+addr, "COVE_GITHUB_API="+hub.URL, "COVE_GITHUB_GIT="+hub.URL,
+		"COVE_DATA="+filepath.Join(dir, "data"), "COVE_LISTEN="+addr, "COVE_GITHUB_API="+hub.URL, "COVE_GITHUB_GIT="+hub.URL, "COVE_GITHUB_SSH="+hub.SSH,
 		"COVE_HEALTH_INTERVAL=200ms", "COVE_SYNC_INTERVAL=1h", "COVE_REPLAY_INTERVAL=200ms", "GIT_TERMINAL_PROMPT=0")
 	x := &e2e{hub, bin, addr, env}
 	if _, e, err := x.cove("sync"); err != nil {
@@ -93,7 +93,7 @@ func (x *e2e) serve(t *testing.T) (*bytes.Buffer, chan error, *exec.Cmd) {
 type status struct {
 	Mode   string
 	Repos  int
-	GitHub struct{ API, Git struct{ OK bool } }
+	GitHub map[string]struct{ OK bool }
 }
 
 func (x *e2e) waitStatus(t *testing.T, srvLog *bytes.Buffer, what string, ok func(status) bool) {
@@ -137,13 +137,13 @@ func TestBinaryEndToEnd(t *testing.T) {
 		return err
 	}
 
-	waitStatus("GitHub up", func(s status) bool { return s.Repos == 1 && s.GitHub.API.OK && s.GitHub.Git.OK })
+	waitStatus("GitHub up", func(s status) bool { return s.Repos == 1 && s.GitHub["api"].OK && s.GitHub["git-https"].OK })
 	if err := clone(tok); err != nil {
 		t.Fatalf("clone: %v", err)
 	}
 
 	hub.SetFaults(fakehub.Faults{APIDown: true, GitDown: true})
-	waitStatus("GitHub down", func(s status) bool { return !s.GitHub.API.OK && !s.GitHub.Git.OK })
+	waitStatus("GitHub down", func(s status) bool { return !s.GitHub["api"].OK && !s.GitHub["git-https"].OK })
 	if err := clone(tok); err != nil {
 		t.Fatalf("clone with GitHub down: %v", err)
 	}
@@ -167,17 +167,18 @@ func TestBinaryEndToEnd(t *testing.T) {
 }
 
 // TestFailoverEndToEnd follows the outage story with the real binary: a developer links their
-// GitHub account with `cove client authorise`, their clone of the GitHub URL goes to GitCove
-// after `cove client on`, a push lands during failover and they open an issue in the web
-// interface, and after `failover end` and `replay approve` the server replays it all: a new
-// branch directly, main as a PR, and the issue under their GitHub name.
+// GitHub account with `cove client authorise`, their agent sends their clone of the GitHub URL to
+// GitCove once failover starts, a push lands during failover and they open an issue in the web
+// interface. GitCove then restarts, and the agent changes nothing while it can't reach it. After
+// `failover end` the agent switches back, and after `replay approve` the server replays it all:
+// a new branch directly, main as a PR, and the issue under their GitHub name.
 func TestFailoverEndToEnd(t *testing.T) {
 	x := start(t)
 	tok, e, err := x.cove("token", "create", "-name", "ben", "-repo", x.hub.Org+"/app")
 	if err != nil {
 		t.Fatalf("token create: %v\n%s", err, e)
 	}
-	srvLog, _, _ := x.serve(t)
+	srvLog, done, srv := x.serve(t)
 	x.waitStatus(t, srvLog, "server up", func(s status) bool { return s.Mode == "normal" && s.Repos == 1 })
 
 	// A developer machine: its own global Git config with a credential helper.
@@ -198,7 +199,23 @@ func TestFailoverEndToEnd(t *testing.T) {
 		}
 		return strings.TrimSpace(string(out))
 	}
-	run("", x.bin, "client", "setup", "-url", "http://"+x.addr, "-org", x.hub.Org)
+	run("", x.bin, "client", "setup", "-url", "http://"+x.addr, "-org", x.hub.Org, "-agent=false") // not a service on the test machine
+	agent := exec.Command(x.bin, "client", "agent", "-every", "100ms")
+	agent.Env = devEnv
+	if err := agent.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = agent.Process.Kill(); _ = agent.Wait() })
+	ruleOn := func() bool { cfg, _ := os.ReadFile(gitcfg); return strings.Contains(string(cfg), "insteadOf") }
+	waitRule := func(on bool) {
+		t.Helper()
+		for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+			if ruleOn() == on {
+				return
+			}
+		}
+		t.Fatalf("the agent didn't turn the rule on=%v", on)
+	}
 
 	authorise := exec.Command(x.bin, "client", "authorise")
 	authorise.Env = devEnv
@@ -223,7 +240,7 @@ func TestFailoverEndToEnd(t *testing.T) {
 	if out, e, err := x.cove("failover", "start"); err != nil {
 		t.Fatalf("failover start: %v\n%s%s", err, out, e)
 	}
-	run("", x.bin, "client", "on")
+	waitRule(true)
 	clone := filepath.Join(t.TempDir(), "app")
 	run("", "git", "clone", "-q", "https://github.com/"+x.hub.Org+"/app.git", clone)
 	if err := os.WriteFile(filepath.Join(clone, "fix.txt"), []byte("fix\n"), 0o600); err != nil {
@@ -244,16 +261,25 @@ func TestFailoverEndToEnd(t *testing.T) {
 	}
 	resp.Body.Close()
 
+	// GitCove goes away and comes back: the agent leaves the rule as it was meanwhile.
+	if err := srv.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	<-done
+	time.Sleep(500 * time.Millisecond)
+	if !ruleOn() {
+		t.Fatal("the agent turned the rule off while GitCove was unreachable")
+	}
+	srvLog, _, _ = x.serve(t)
+	x.waitStatus(t, srvLog, "server back", func(s status) bool { return s.Mode == "failover" })
+
 	x.hub.SetFaults(fakehub.Faults{})
 	out, e, err := x.cove("failover", "end")
 	if err != nil || !strings.Contains(out, "push to fix") || !strings.Contains(out, "open PR into main") || !strings.Contains(out, "replay approve") ||
 		!strings.Contains(out, `new issue "outage bug"`) || !strings.Contains(out, "ben-gh") {
 		t.Fatalf("failover end: %v\n%s%s", err, out, e)
 	}
-	run("", x.bin, "client", "off")
-	if cfg, _ := os.ReadFile(gitcfg); strings.Contains(string(cfg), "insteadOf") {
-		t.Fatalf("client off left the rule:\n%s", cfg)
-	}
+	waitRule(false)
 	if out, e, err := x.cove("replay", "approve"); err != nil {
 		t.Fatalf("replay approve: %v\n%s%s", err, out, e)
 	}
