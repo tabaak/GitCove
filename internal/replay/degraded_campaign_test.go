@@ -109,3 +109,49 @@ func TestUnlandedPushWaits(t *testing.T) {
 		t.Fatalf("a failed push after the grace period: %s, %s", it.State, it.Result)
 	}
 }
+
+// TestPauseMidSend: an admin pauses degraded mode while replay is sending an item. That item's
+// call finishes and its result is recorded; then replay stops, even for an item it could settle
+// without sending, and `cove degraded start` resumes it.
+func TestPauseMidSend(t *testing.T) {
+	ctx := context.Background()
+	e := setup(t, 1, "app")
+	e.hub.AddIssue("app", "carol", "it breaks", "steps")
+	if err := e.m.Cycle(ctx); err != nil {
+		t.Fatal(err)
+	}
+	e.mode(t, store.Degraded)
+	e.rec(t, 1, "comment", "1", store.Change{Body: "on its way"})
+	e.rec(t, 1, "state", "1", store.Change{State: "closed"})
+	e.hub.SetIssue("app", 1, "state", "closed") // already so on GitHub: settled without sending
+	e.r.Kill = func(point string) error {
+		if point == "sending" {
+			e.r.Kill = nil
+			e.mode(t, store.Paused)
+		}
+		return nil
+	}
+	if err := e.r.Pass(ctx); err != nil {
+		t.Fatal(err)
+	}
+	items := e.metaItems(t)
+	if items[0].State != "done" || len(commentsOn(e.hub, 1)) != 1 {
+		t.Fatalf("the comment being sent: %s %q, %d on GitHub", items[0].State, items[0].Result, len(commentsOn(e.hub, 1)))
+	}
+	if items[1].State != "pending" {
+		t.Fatalf("replay went on after the pause: %s %q", items[1].State, items[1].Result)
+	}
+	if err := e.r.Pass(ctx); err != nil { // paused: does nothing
+		t.Fatal(err)
+	}
+	if it := e.metaItems(t)[1]; it.State != "pending" {
+		t.Fatalf("replayed while paused: %s", it.State)
+	}
+	e.mode(t, store.Degraded)
+	if err := e.r.Pass(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if it := e.metaItems(t)[1]; it.State != "done" {
+		t.Fatalf("after resuming: %s %q", it.State, it.Result)
+	}
+}

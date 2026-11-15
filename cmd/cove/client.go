@@ -19,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/tabaak/gitcove/internal/store"
 )
 
 // clientCmd sets up a developer machine. It only touches the developer's global Git config:
@@ -134,10 +136,11 @@ func setRule(base, org string, on bool) error {
 	return nil
 }
 
-// agent asks GitCove for its mode every interval, and turns the rule on in failover and degraded
-// mode and off otherwise. It acts only when that answer changes, so `cove client on` or `off` by
-// hand holds until the next switch. If GitCove can't be reached it changes nothing: a developer
-// keeps working where they were rather than being split from the team by a network blip.
+// agent asks GitCove for its mode every interval, and turns the rule on in the modes that take
+// writes (failover and degraded, paused or not) and off otherwise, with a system notification. It
+// acts only when that answer changes, so `cove client on` or `off` by hand holds until the next
+// switch. If GitCove can't be reached it changes nothing: a developer keeps working where they
+// were rather than being split from the team by a network blip.
 func agent(every time.Duration) error {
 	base, org, err := clientConfig()
 	if err != nil {
@@ -155,7 +158,7 @@ func agent(every time.Duration) error {
 			continue
 		}
 		unreachable = false
-		want := map[bool]string{true: "on", false: "off"}[mode == "failover" || mode == "degraded"]
+		want := map[bool]string{true: "on", false: "off"}[store.Mode(mode).TakesWrites()]
 		if want == applied {
 			continue
 		}
@@ -163,8 +166,28 @@ func agent(every time.Duration) error {
 			log.Printf("switching Git %s: %v", want, err)
 			continue
 		}
+		msg := fmt.Sprintf("GitCove is in %s mode: Git for %s goes to %s", mode, org, map[string]string{"on": base, "off": "GitHub"}[want])
+		log.Print(msg)
+		if applied != "" || want == "on" { // not on every login while GitHub is fine
+			notify(msg)
+		}
 		applied = want
-		log.Printf("GitCove is in %s mode: Git for %s goes to %s", mode, org, map[string]string{"on": base, "off": "GitHub"}[want])
+	}
+}
+
+// notify shows msg as a system notification, best effort.
+func notify(msg string) {
+	var c *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		c = exec.Command("osascript", "-e", "on run argv", "-e", `display notification (item 1 of argv) with title "GitCove"`, "-e", "end run", msg)
+	case "linux":
+		c = exec.Command("notify-send", "GitCove", msg)
+	default:
+		return
+	}
+	if out, err := c.CombinedOutput(); err != nil {
+		log.Printf("notification: %v %s", err, out)
 	}
 }
 

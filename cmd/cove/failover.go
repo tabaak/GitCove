@@ -74,6 +74,48 @@ func failoverCmd(cfg config, args []string) error {
 	return fmt.Errorf("failover: unknown subcommand %q", args[0])
 }
 
+// degradedCmd is the admin's switch for degraded mode; the health checks only hint at it.
+func degradedCmd(cfg config, args []string) error {
+	if len(args) != 1 {
+		return errors.New("degraded: want start, pause or stop")
+	}
+	ctx := context.Background()
+	st, err := openStore(cfg)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	switch args[0] {
+	case "start":
+		if err := st.SetMode(ctx, cliActor(), store.Degraded); err != nil {
+			return err
+		}
+		fmt.Println("Degraded mode on: GitCove takes pushes and changes, and replays the conflict-free ones to GitHub in the background. " +
+			"Conflicts wait for `cove replay plan`. Developers' agents switch them to GitCove; without one, `cove client on`.")
+	case "pause":
+		if err := st.SetMode(ctx, cliActor(), store.Paused); err != nil {
+			return err
+		}
+		fmt.Println("Replay paused: GitCove still takes pushes and changes, but sends nothing to GitHub until `cove degraded start`.")
+	case "stop":
+		n, err := st.Unreplayed(ctx)
+		if err != nil {
+			return err
+		}
+		to := store.Normal
+		if n > 0 {
+			to = store.Replaying // it returns to normal by itself once the rest is replayed
+		}
+		if err := st.SetMode(ctx, cliActor(), to); err != nil {
+			return err
+		}
+		fmt.Printf("Degraded mode off: pushes are refused again. Developers' agents switch them back to GitHub; without one, `cove client off`. %d changes still to replay.\n", n)
+	default:
+		return errors.New("degraded: want start, pause or stop")
+	}
+	return nil
+}
+
 func replayCmd(cfg config, args []string) error {
 	if len(args) == 0 {
 		return errors.New("replay: want plan, approve, skip or retry")

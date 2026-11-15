@@ -172,7 +172,7 @@ func replayCampaign(t *testing.T, seed uint64, degraded bool) {
 		}
 	}
 	if degraded {
-		e.mode(t, store.Normal) // what the health checks do once GitHub is healthy and nothing is left
+		e.mode(t, store.Normal) // what `cove degraded stop` does once nothing is left
 	}
 	if m, _ := e.st.Mode(ctx); m != store.Normal {
 		t.Fatalf("mode %s after replay", m)

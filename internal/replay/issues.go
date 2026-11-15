@@ -123,6 +123,9 @@ func (r *Replayer) replayIssues(ctx context.Context) error {
 		byID[repo.ID] = repo
 	}
 	for _, it := range items {
+		if err := r.stopped(ctx); err != nil {
+			return err
+		}
 		nums, why, err := r.locals(ctx, it)
 		if err != nil {
 			return err

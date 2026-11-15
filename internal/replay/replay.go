@@ -229,6 +229,18 @@ func ids(items []store.RefItem) []int64 {
 // errStopped means the mode left Replaying, e.g. because failover started again.
 var errStopped = errors.New("replay stopped: no longer replaying")
 
+// stopped is errStopped once the mode no longer replays, e.g. because an admin paused degraded
+// mode. It's checked before each action or item: the one being sent finishes and records its
+// result (nothing on the way checks the mode), and then replay starts no other.
+func (r *Replayer) stopped(ctx context.Context) error {
+	if m, err := r.Store.Mode(ctx); err != nil {
+		return err
+	} else if !m.Replays() {
+		return errStopped
+	}
+	return nil
+}
+
 // Execute carries out one action. An error means replay should pause; the items keep their state.
 func (r *Replayer) Execute(ctx context.Context, a Action) error {
 	switch a.Kind {
@@ -314,8 +326,8 @@ func prBody(a Action) string {
 
 // Pass replays everything queued, if the instance is replaying or degraded. On an error (GitHub
 // failing again, say) it alerts and returns; items keep their state and the next pass resumes
-// them. Once nothing is left it returns a replaying instance to normal. Degraded mode is left by
-// the health checks instead, once GitHub has been healthy for a while.
+// them. Once nothing is left it returns a replaying instance to normal. Degraded mode is left only
+// by the admin, with `cove degraded stop`.
 func (r *Replayer) Pass(ctx context.Context) error {
 	m, err := r.Store.Mode(ctx)
 	if err != nil || !m.Replays() {
@@ -352,6 +364,9 @@ func (r *Replayer) pass(ctx context.Context) error {
 		return errors.Join(fetchErrs...)
 	}
 	for _, a := range actions {
+		if err := r.stopped(ctx); err != nil {
+			return err
+		}
 		if err := r.Execute(ctx, a); err != nil {
 			return fmt.Errorf("%s %s: %w", a.Repo.FullName(), a.Branch, err)
 		}

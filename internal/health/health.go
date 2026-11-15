@@ -1,12 +1,11 @@
-// Package health probes GitHub on separate paths, alerts the admin when paths stop answering,
-// and, if the admin opted in, switches the instance's mode by itself (design 8.14).
+// Package health probes GitHub on separate paths and alerts the admin when paths stop answering
+// or GitHub turns slow or flaky (design 8.14). It never changes the mode: the admin does.
 package health
 
 import (
 	"bufio"
 	"cmp"
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -28,30 +27,24 @@ type Result struct {
 	DelayMS   int64     `json:"delay_ms"`   // the last check's delay
 }
 
-// Auto is the switching the admin opted in to and its thresholds (decision D6). Zero thresholds
-// take DefaultAuto's.
-type Auto struct {
-	FailoverAfter time.Duration // start failover once every probe has failed this long; 0: never
-	Degraded      bool          // enter degraded mode once ErrorRate of the window's checks fail or are slow
-
-	MinRun     time.Duration // an automatic failover lasts at least this long
-	Cooldown   time.Duration // after an automatic failover or degraded mode ends, no new one for this long
-	HealthyFor time.Duration // every check answering in time for this long ends either
+// Thresholds decide what the alerts call down, slow, flaky and healthy again (decision D6). Zero
+// fields take DefaultThresholds'.
+type Thresholds struct {
+	HealthyFor time.Duration // every check answering in time for this long ends a flaky spell
 	Window     time.Duration // the error rate is over this long
 	AlertAfter time.Duration // a path not answering for this long is alerted
 	SlowAfter  time.Duration // an answer slower than this counts as an error
-	ErrorRate  float64
+	ErrorRate  float64       // this share of the window's checks failing or slow is a flaky spell
 }
 
-// DefaultAuto has decision D6's default thresholds; both opt-ins are off. Only the ten minutes
-// before failover comes from the design, and it's a guess; the rest are guesses too.
-var DefaultAuto = Auto{MinRun: 30 * time.Minute, Cooldown: 30 * time.Minute, HealthyFor: 10 * time.Minute,
-	Window: 5 * time.Minute, AlertAfter: 2 * time.Minute, SlowAfter: 5 * time.Second, ErrorRate: 0.2}
+// DefaultThresholds are guesses, not yet set by testing against GitHub.
+var DefaultThresholds = Thresholds{HealthyFor: 10 * time.Minute, Window: 5 * time.Minute, AlertAfter: 2 * time.Minute,
+	SlowAfter: 5 * time.Second, ErrorRate: 0.2}
 
-func (a Auto) withDefaults() Auto {
-	d := DefaultAuto
-	a.MinRun, a.Cooldown, a.HealthyFor = cmp.Or(a.MinRun, d.MinRun), cmp.Or(a.Cooldown, d.Cooldown), cmp.Or(a.HealthyFor, d.HealthyFor)
-	a.Window, a.AlertAfter, a.SlowAfter = cmp.Or(a.Window, d.Window), cmp.Or(a.AlertAfter, d.AlertAfter), cmp.Or(a.SlowAfter, d.SlowAfter)
+func (a Thresholds) withDefaults() Thresholds {
+	d := DefaultThresholds
+	a.HealthyFor, a.Window = cmp.Or(a.HealthyFor, d.HealthyFor), cmp.Or(a.Window, d.Window)
+	a.AlertAfter, a.SlowAfter = cmp.Or(a.AlertAfter, d.AlertAfter), cmp.Or(a.SlowAfter, d.SlowAfter)
 	a.ErrorRate = cmp.Or(a.ErrorRate, d.ErrorRate)
 	return a
 }
@@ -65,20 +58,14 @@ type Checker struct {
 	Store   *store.Store
 	Log     *slog.Logger
 	Alert   func(msg string) // nil: log only
-	Auto    Auto
+	Limits  Thresholds
 	Now     func() time.Time // tests only
 
 	mu      sync.Mutex
 	probes  map[string]*probe
 	started time.Time
 	alerted string // the paths not answering at the last alert
-
-	// The mode as the checks last saw it, since when, and whether they set it themselves.
-	loaded bool
-	seen   store.Mode
-	since  time.Time
-	auto   bool
-	ended  time.Time // when the checks last ended an automatic failover or degraded mode
+	flaky   bool   // in a flaky spell, as last alerted
 }
 
 type probe struct {
@@ -99,7 +86,7 @@ func (c *Checker) now() time.Time {
 	return time.Now().UTC()
 }
 
-// Check runs every probe once, at the same time, then alerts and switches modes as needed.
+// Check runs every probe once, at the same time, then alerts as needed.
 func (c *Checker) Check(ctx context.Context) {
 	runs := map[string]func(context.Context) error{"api": c.GH.Probe, "git-https": c.probeGit}
 	if c.API != "" {
@@ -129,7 +116,7 @@ func (c *Checker) Check(ctx context.Context) {
 	}
 	wg.Wait()
 
-	a, now := c.Auto.withDefaults(), c.now()
+	a, now := c.Limits.withDefaults(), c.now()
 	c.mu.Lock()
 	if c.probes == nil {
 		c.probes, c.started = map[string]*probe{}, now
@@ -222,18 +209,17 @@ func (c *Checker) Status() map[string]Result {
 	return out
 }
 
-// decide alerts when the set of paths not answering changes, and switches modes as the admin
-// opted in to. It never ends a failover an admin started.
-func (c *Checker) decide(ctx context.Context, a Auto, now time.Time) {
+// decide alerts when the set of paths not answering changes, and when a flaky spell starts or
+// ends. The alerts hint at what the admin could do; switching is theirs.
+func (c *Checker) decide(ctx context.Context, a Thresholds, now time.Time) {
 	c.mu.Lock()
 	var down []string
-	allDown, healthy, nbad, n := true, true, 0, 0
+	healthy, nbad, n := true, 0, 0
 	for name, p := range c.probes {
-		allDown = allDown && now.Sub(p.answered) >= a.FailoverAfter
 		healthy = healthy && now.Sub(p.healthy) >= a.HealthyFor
 		if now.Sub(p.answered) >= a.AlertAfter {
 			down = append(down, name)
-			continue // a path that's down is alerted, not "flaky": a blocked SSH port mustn't mean degraded mode
+			continue // a path that's down is alerted, not "flaky": a blocked SSH port mustn't hint at degraded mode
 		}
 		for _, s := range p.samples {
 			n++
@@ -245,7 +231,7 @@ func (c *Checker) decide(ctx context.Context, a Auto, now time.Time) {
 	slices.Sort(down)
 	_, checksSSH := c.probes["git-ssh"]
 	everyPath := len(down) == len(c.probes)
-	windowFull := now.Sub(c.started) >= a.Window
+	flaky := now.Sub(c.started) >= a.Window && n > 0 && float64(nbad) >= a.ErrorRate*float64(n)
 	c.mu.Unlock()
 
 	mode, err := c.Store.Mode(ctx)
@@ -253,32 +239,34 @@ func (c *Checker) decide(ctx context.Context, a Auto, now time.Time) {
 		c.Log.Error("health: read mode", "err", err)
 		return
 	}
-	c.load(ctx, mode, now)
 
 	if set := strings.Join(down, ", "); set != c.alerted {
 		c.alerted = set
-		c.alert(downMessage(a, mode, down, checksSSH, everyPath))
+		c.alert(downMessage(mode, down, checksSSH, everyPath))
 	}
-
-	cooled := now.Sub(c.ended) >= a.Cooldown
 	switch {
-	case (mode == store.Normal || mode == store.Degraded) && a.FailoverAfter > 0 && allDown && cooled:
-		c.switchTo(ctx, store.Failover, now, fmt.Sprintf("every check of GitHub has failed for %s, so failover started by itself. "+
-			"Developers' agents switch them to GitCove. It ends by itself once GitHub has been healthy for %s, or with `cove failover end`.",
-			a.FailoverAfter, a.HealthyFor))
-	case mode == store.Normal && a.Degraded && windowFull && n > 0 && float64(nbad) >= a.ErrorRate*float64(n) && cooled:
-		c.switchTo(ctx, store.Degraded, now, fmt.Sprintf("%d of the last %d checks of GitHub failed or were slow, so GitCove entered degraded mode. "+
-			"Developers' agents send their work to GitCove, and replay posts it to GitHub in the background. "+
-			"It ends once GitHub has been healthy for %s and nothing is left to replay.", nbad, n, a.HealthyFor))
-	case mode == store.Degraded && healthy:
-		c.switchTo(ctx, store.Normal, now, fmt.Sprintf("GitHub has been healthy for %s and everything is replayed, so degraded mode ended.", a.HealthyFor))
-	case mode == store.Failover && c.auto && now.Sub(c.since) >= a.MinRun && healthy:
-		c.switchTo(ctx, store.Reconciling, now, fmt.Sprintf("GitHub has been healthy for %s, so the automatic failover ended. "+
-			"Developers' agents switch them back to GitHub. Check `cove replay plan`, then `cove replay approve`.", a.HealthyFor))
+	case flaky && !c.flaky:
+		c.flaky = true
+		msg := fmt.Sprintf("GitHub is slow or flaky: %d of the last %d checks failed or took over %s (alerted at %.0f%% over %s).",
+			nbad, n, a.SlowAfter, a.ErrorRate*100, a.Window)
+		if mode == store.Normal {
+			msg += " If developers are held up, start degraded mode with `cove degraded start`."
+		}
+		c.alert(msg)
+	case c.flaky && healthy:
+		c.flaky = false
+		msg := fmt.Sprintf("GitHub has answered every check in time for %s.", a.HealthyFor)
+		switch mode {
+		case store.Degraded:
+			msg += " End degraded mode with `cove degraded stop`."
+		case store.Paused:
+			msg += " Resume replay with `cove degraded start`, or end degraded mode with `cove degraded stop`."
+		}
+		c.alert(msg)
 	}
 }
 
-func downMessage(a Auto, mode store.Mode, down []string, checksSSH, everyPath bool) string {
+func downMessage(mode store.Mode, down []string, checksSSH, everyPath bool) string {
 	if len(down) == 0 {
 		return "GitHub answers again on every path checked."
 	}
@@ -291,49 +279,10 @@ func downMessage(a Auto, mode store.Mode, down []string, checksSSH, everyPath bo
 	case https && !ssh && checksSSH:
 		msg += " Git over SSH still works: developers can switch with `git config --global url.git@github.com:.insteadOf https://github.com/`."
 	}
-	if everyPath && mode == store.Normal {
-		if a.FailoverAfter > 0 {
-			msg += fmt.Sprintf(" Failover starts by itself if this lasts %s.", a.FailoverAfter)
-		} else {
-			msg += " Start failover with `cove failover start`."
-		}
+	if everyPath && mode != store.Failover {
+		msg += " Start failover with `cove failover start`."
 	}
 	return msg
-}
-
-// load learns, on the first check after a start, whether the checks set the current mode
-// themselves and when they last ended one; afterwards it notices changes others make.
-func (c *Checker) load(ctx context.Context, mode store.Mode, now time.Time) {
-	if c.loaded {
-		if mode != c.seen {
-			c.seen, c.since, c.auto = mode, now, false
-		}
-		return
-	}
-	c.loaded, c.seen, c.since = true, mode, now
-	h, err := c.Store.ModeHistory(ctx, "auto")
-	if err != nil {
-		c.Log.Error("health: read mode history", "err", err)
-		return
-	}
-	if h.LastBy == "auto" {
-		c.auto, c.since = true, h.LastAt
-	}
-	c.ended = h.EndedAt
-}
-
-func (c *Checker) switchTo(ctx context.Context, to store.Mode, now time.Time, msg string) {
-	if err := c.Store.SetMode(ctx, "auto", to); err != nil {
-		if !errors.Is(err, store.ErrWrongMode) { // e.g. degraded mode with items still to replay
-			c.Log.Error("health: switch mode", "to", to, "err", err)
-		}
-		return
-	}
-	c.seen, c.since, c.auto = to, now, true
-	if to == store.Reconciling || to == store.Normal {
-		c.ended = now
-	}
-	c.alert(msg)
 }
 
 func (c *Checker) alert(msg string) {

@@ -41,6 +41,9 @@ const usage = `usage: cove <command>
   failover start                           accept pushes while GitHub is down
   failover allow-protected on|off          allow direct pushes to protected branches, for this failover only
   failover end                             refuse pushes again, catch up with GitHub and show the replay plan
+  degraded start                           GitHub slow or flaky: take pushes and changes, replay conflict-free ones in the background
+  degraded pause                           keep taking work, but stop replaying it until degraded start
+  degraded stop                            refuse pushes again; what's left replays, then GitCove is back to normal
   replay plan                              dry run: what replay would push and post, and what needs a human
   replay approve                           let the server replay the plan
   replay skip ID | replay retry ID         settle a conflict or uncertain item: drop it, or queue it again
@@ -101,6 +104,8 @@ func run(args []string) error {
 		return tokenCmd(cfg, args[1:])
 	case "failover":
 		return failoverCmd(cfg, args[1:])
+	case "degraded":
+		return degradedCmd(cfg, args[1:])
 	case "replay":
 		return replayCmd(cfg, args[1:])
 	case "branch":
@@ -120,9 +125,7 @@ type config struct {
 	AlertWebhook                      string
 	SyncEvery, HealthEvery, FetchTime time.Duration
 	ReplayEvery                       time.Duration
-	SSH                               string        // GitHub's SSH server for the health probe; "" skips it
-	AutoFailover                      time.Duration // 0: failover only by hand
-	Degraded                          bool
+	SSH                               string // GitHub's SSH server for the health probe; "" skips it
 }
 
 func loadConfig() (config, error) {
@@ -147,12 +150,6 @@ func loadConfig() (config, error) {
 	if c.SSH == "off" {
 		c.SSH = ""
 	}
-	switch v := env("COVE_DEGRADED", "off"); v {
-	case "on", "off":
-		c.Degraded = v == "on"
-	default:
-		return c, fmt.Errorf("COVE_DEGRADED: want on or off, got %q", v)
-	}
 	var err error
 	for _, d := range []struct {
 		dst  *time.Duration
@@ -163,7 +160,6 @@ func loadConfig() (config, error) {
 		{&c.HealthEvery, "COVE_HEALTH_INTERVAL", "30s"},
 		{&c.FetchTime, "COVE_FETCH_TIMEOUT", "10m"},
 		{&c.ReplayEvery, "COVE_REPLAY_INTERVAL", "30s"},
-		{&c.AutoFailover, "COVE_AUTO_FAILOVER", "0"},
 	} {
 		if *d.dst, err = time.ParseDuration(env(d.name, d.def)); err != nil {
 			return c, fmt.Errorf("%s: %w", d.name, err)
@@ -232,7 +228,7 @@ func build(cfg config) (*app, error) {
 		users:  users,
 		replay: &replay.Replayer{GH: gh, Store: st, Git: gs, Mirror: m, Log: log, Alert: alerter(cfg.AlertWebhook, log), Users: users},
 		health: &health.Checker{GH: gh, HTTP: &http.Client{Timeout: 10 * time.Second}, API: cfg.API, GitURL: gs.GitURL, SSHAddr: cfg.SSH,
-			Store: st, Log: log, Alert: alerter(cfg.AlertWebhook, log), Auto: health.Auto{FailoverAfter: cfg.AutoFailover, Degraded: cfg.Degraded}},
+			Store: st, Log: log, Alert: alerter(cfg.AlertWebhook, log)},
 		log: log,
 	}, nil
 }

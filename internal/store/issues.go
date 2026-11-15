@@ -312,7 +312,7 @@ func (s *Store) EditLocal(ctx context.Context, repoID int64, localID, title, bod
 	return s.tx(ctx, func(tx *sql.Tx) error {
 		if m, err := mode(tx); err != nil {
 			return err
-		} else if m == Degraded {
+		} else if m == Degraded || m == Paused {
 			return fmt.Errorf("%w: in degraded mode %s may already be on its way to GitHub; edit it there once it's posted", ErrWrongMode, localID)
 		} else if m != Failover {
 			return fmt.Errorf("%w: GitCove takes changes only during failover (mode is %s)", ErrWrongMode, m)

@@ -39,8 +39,6 @@ Put TLS in front of it, for example with Caddy. Developers send their token as a
 | `COVE_APP_CLIENT_ID` | unset | The App's client ID. With the next two, lets people post their outage work under their own names (see below) |
 | `COVE_APP_CLIENT_SECRET_FILE` | unset | Path to a file holding the App's client secret |
 | `COVE_USER_KEY_FILE` | unset | Path to the key that encrypts people's GitHub tokens: 64 hex digits, e.g. from `openssl rand -hex 32`. Keep it off the data volume |
-| `COVE_AUTO_FAILOVER` | `0` (off) | Start failover by itself once every health check has failed for this long, e.g. `10m`. See "Automatic switching" |
-| `COVE_DEGRADED` | `off` | `on`: enter degraded mode by itself when GitHub is slow or flaky. See "Automatic switching" |
 | `COVE_GITHUB_SSH` | `github.com:22` | GitHub's SSH server, for the health check. `off` skips it, if GitCove's server can't reach that port at all |
 | `COVE_GITHUB_API`, `COVE_GITHUB_GIT` | `https://api.github.com`, `https://github.com` | GitHub endpoints, overridden only in tests |
 
@@ -67,13 +65,16 @@ cove replay plan                          # the dry run again, at any time
 cove replay approve                       # the server replays the plan
 cove replay skip 12                       # drop a conflict for good
 cove replay retry 12                      # queue it again (then `cove replay approve`)
+cove degraded start                       # GitHub is slow or flaky: take work, replay it in the background
+cove degraded pause                       # keep taking work, stop replaying it (`degraded start` resumes)
+cove degraded stop                        # refuse pushes again; what's left replays, then back to normal
 cove branch mark my-org/api prod deploy   # deploy branches get PRs too
 cove branch mark my-org/api rc protected  # protected on GitCove even if not on GitHub
 cove branch list
 cove repo pr-only my-org/api off          # for repos with no push-based deploys
 ```
 
-The mode (normal, failover, reconciling, replaying, degraded) lives in the database, so it survives a restart, and every change is written to the audit log. So are the emergency setting, branch marks, the PR-only setting, and skips and retries. `GET /status` shows the mode.
+The mode (normal, failover, reconciling, replaying, degraded, degraded-paused) lives in the database, so it survives a restart, and every change is written to the audit log. So are the emergency setting, branch marks, the PR-only setting, and skips and retries. `GET /status` shows the mode.
 
 **During failover** GitCove accepts pushes to branches. It refuses:
 
@@ -99,18 +100,15 @@ Pushes never use `--force`, so GitHub only ever fast-forwards. Each push can sta
 
 Replay can stop at any point and resume. The fallback branch name is stored before anything is sent. A restart looks up the PR from that branch before opening one, and GitHub refuses a second open PR with the same head and base. If GitHub fails during replay, replay pauses, raises an alert, and retries on each interval. `cove failover start` returns to failover. Finished items stay finished, and new pushes join the queue.
 
-### Health checks and automatic switching
+### Health checks and degraded mode
 
 Every `COVE_HEALTH_INTERVAL`, GitCove checks GitHub on four paths at once: the API signed in as the App, the API without signing in, Git over HTTPS, and Git over SSH (only its greeting, so no key is needed). An answer slower than 5 seconds counts as an error. GitCove doesn't test writes, because a test write would leave something on GitHub each time. Replay's own writes show whether writing works.
 
-When a path hasn't answered for 2 minutes, the admin gets an alert naming it, and another when the set changes or everything answers again. If only one of SSH and HTTPS is broken, the alert gives the `insteadOf` rule that moves developers to the other. If every path is down, it says to run `cove failover start`. If only the signed-in API fails, the alert shows that too, but it's GitCove's problem (the App or its key), not an outage.
+When a path hasn't answered for 2 minutes, the admin gets an alert naming it, and another when the set changes or everything answers again. If only one of SSH and HTTPS is broken, the alert gives the `insteadOf` rule that moves developers to the other. If every path is down, it says to run `cove failover start`. If only the signed-in API fails, the alert shows that too, but it's GitCove's problem (the App or its key), not an outage. When 20% of the last 5 minutes' checks failed or were slow, an alert says GitHub is slow or flaky and suggests `cove degraded start`; once every path has answered in time for 10 minutes, another says so and, in degraded mode, suggests `cove degraded stop` (and, while paused, `cove degraded start` to resume). Paths that are fully down don't count as flaky, since they get their own alert. These thresholds are guesses (decision D6).
 
-Both kinds of automatic switching are opt-in. If GitCove switches by mistake, the team's work is split across two systems, and for most teams that costs more than a few minutes' delay.
+GitCove never switches modes by itself: only the admin does. If it switched by mistake, the team's work would be split across two systems, and for most teams that costs more than a few minutes' delay.
 
-- **Automatic failover** (`COVE_AUTO_FAILOVER=10m`) starts only when every path has failed for that long without a single answer, so a flapping GitHub never triggers it. It lasts at least 30 minutes. It ends by itself, to reconciling, once every path has answered in time for 10 minutes, and you still approve the replay plan. After it ends, it can't start again for 30 minutes. A failover an admin started is never ended by GitCove.
-- **Degraded mode** (`COVE_DEGRADED=on`) is for a GitHub that answers, but slowly or only some of the time. It starts when 20% of the last 5 minutes' checks failed or were slow. Paths that are fully down don't count towards this, since they get an alert instead. In degraded mode GitCove takes pushes and web changes as in failover, and replays them in the background as GitHub answers, without waiting for plan approval. Conflicts and uncertain items still wait for you. It ends once every path has answered in time for 10 minutes and nothing is left to replay. If everything goes down while degraded, automatic failover (if on) takes over. Local edits of new issues are refused in degraded mode, because replay may already be posting them.
-
-These thresholds are guesses (decision D6). Every automatic switch is alerted, written to the audit log as `auto`, and remembered across a restart.
+**Degraded mode** (`cove degraded start`) is for a GitHub that answers, but slowly or only some of the time. GitCove takes pushes and web changes as in failover, and replays the conflict-free ones in the background as GitHub answers, without waiting for plan approval. Conflicts and uncertain items still wait for you (`cove replay plan`, then skip or retry), and work for default and deploy branches still goes up as a PR. `cove degraded pause` stops the background replay but keeps taking work: an item already being sent finishes and its result is recorded, and nothing else goes to GitHub until `cove degraded start` resumes it. `cove degraded stop` refuses pushes again; whatever is left replays, and GitCove returns to normal once it's done. If everything goes down while degraded, `cove failover start` takes over. Local edits of new issues are refused in degraded mode, because replay may already be posting them.
 
 ### Issues and comments during failover
 
@@ -162,7 +160,7 @@ Once, while things are normal (Git needs a credential helper, such as `osxkeycha
 COVE_TOKEN=<token> cove client setup -url https://gitcove.example.com -org my-org
 ```
 
-This also installs the agent: a launchd agent on macOS (`~/Library/LaunchAgents/dev.gitcove.agent.plist`, log in `~/Library/Logs/cove-agent.log`) or a systemd user service on Linux (`cove-agent`). Every 30 seconds it asks GitCove's `/status` for the mode. In failover or degraded mode it sends Git for `github.com/my-org/...` (HTTPS and SSH URLs) to GitCove, so existing clones work unchanged. Otherwise it sends it back to GitHub. It acts only when the mode changes, so a switch you make by hand holds until the next one. If it can't reach GitCove, it changes nothing.
+This also installs the agent: a launchd agent on macOS (`~/Library/LaunchAgents/dev.gitcove.agent.plist`, log in `~/Library/Logs/cove-agent.log`) or a systemd user service on Linux (`cove-agent`). Every 30 seconds it asks GitCove's `/status` for the mode. In failover or degraded mode (paused or not) it sends Git for `github.com/my-org/...` (HTTPS and SSH URLs) to GitCove, so existing clones work unchanged. Otherwise it sends it back to GitHub. It acts only when the mode changes, so a switch you make by hand holds until the next one. Every switch shows a system notification (`osascript` on macOS, `notify-send` on Linux). If it can't reach GitCove, it changes nothing.
 
 Without the agent (`-agent=false`, or another OS), switch by hand:
 
@@ -223,7 +221,7 @@ Making replay resend after a restart, or apply edits without checking GitHub's v
 
 The PR campaign (`TestPullCampaign`) adds a third person and has them push, open PRs, review with line comments, reply, approve and merge locally, while on GitHub PR branches and `main` move, PRs are closed or merged, line comments are deleted and the linked account is revoked. Besides the checks above, it checks that replay never pushed to `main`, and that every approval or change request on GitHub came from the reviewer's own account, for their own review, at the commit they reviewed. `fakehub` enforces GitHub's rules here: a review's commit must be part of the PR, an approval must be for the PR's head and not by its author, and a reply needs its parent.
 
-`TestDegradedCampaign` runs the replay and PR campaigns in degraded mode. GitHub is slow and flaky instead of down (up to 40% errors, timeouts, lost responses, rate limits, delays, lagging listings), and replay runs in the background, with kills, while people push, open PRs, review and merge. The campaigns' checks then apply unchanged. `TestUnlandedPushWaits` stops a push between the hook recording it and Git moving the branch, which is where background replay could otherwise drop it. The tests in `internal/health` use a fake clock against `fakehub`'s delay, flapping, SSH-only, HTTPS-only and installation-token faults. They check that only a full outage starts failover, that the minimum run, cooldown and restart behave, and that degraded mode starts and ends as described. `TestFailoverEndToEnd` runs the real agent: it switches on failover, holds while GitCove restarts, and switches back.
+`TestDegradedCampaign` runs the replay and PR campaigns in degraded mode. GitHub is slow and flaky instead of down (up to 40% errors, timeouts, lost responses, rate limits, delays, lagging listings), and replay runs in the background, with kills, while people push, open PRs, review and merge. The campaigns' checks then apply unchanged. `TestUnlandedPushWaits` stops a push between the hook recording it and Git moving the branch, which is where background replay could otherwise drop it. The tests in `internal/health` use a fake clock against `fakehub`'s delay, flapping, SSH-only, HTTPS-only and installation-token faults. They check the alerts and their hints, and that the checks never change the mode. `TestFailoverEndToEnd` runs the real agent: it switches on failover, holds while GitCove restarts, switches back, follows `cove degraded start`, `pause` and `stop`, and notifies on every switch.
 
 CI runs gofmt, `go vet`, golangci-lint, the tests with `-race`, and a Docker build. A nightly run uses 200 seeds.
 
@@ -237,7 +235,7 @@ internal/store/      SQLite in WAL mode, migrations, mode, outbox, mirrored issu
 internal/mirror/     the sync loop (the plan's internal/sync): refs, branch protection, issues and comments
 internal/replay/     replay plan, history comparison, pushes and fallback PRs, replay of issues, comments, PRs, reviews and merges
 internal/auth/       people's GitHub tokens: device flow, encryption, refresh
-internal/health/     probes on four paths, alerts, automatic failover and degraded mode
+internal/health/     probes on four paths and alerts
 internal/web/        HTTP: Git for developers, the web interface, /status
 fakehub/             fault-injecting GitHub stand-in
 ```

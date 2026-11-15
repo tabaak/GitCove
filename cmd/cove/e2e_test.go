@@ -187,7 +187,28 @@ func TestFailoverEndToEnd(t *testing.T) {
 	if err := os.WriteFile(gitcfg, []byte("[credential]\n\thelper = store --file "+filepath.Join(home, "creds")+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	devEnv := append(os.Environ(), "GIT_CONFIG_GLOBAL="+gitcfg, "GIT_TERMINAL_PROMPT=0", "COVE_TOKEN="+tok,
+	// The agent's notifications go to a log instead of the test machine's screen.
+	bin, notes := filepath.Join(home, "bin"), filepath.Join(home, "notes")
+	for _, name := range []string{"osascript", "notify-send"} {
+		if err := os.MkdirAll(bin, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\necho \"$@\" >> "+notes+"\n"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	waitNotes := func(n int) {
+		t.Helper()
+		got := 0
+		for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+			b, _ := os.ReadFile(notes)
+			if got = strings.Count(string(b), "GitCove is in"); got == n {
+				return
+			}
+		}
+		t.Fatalf("%d notifications, want %d: one per switch", got, n)
+	}
+	devEnv := append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "GIT_CONFIG_GLOBAL="+gitcfg, "GIT_TERMINAL_PROMPT=0", "COVE_TOKEN="+tok,
 		"GIT_AUTHOR_NAME=ben", "GIT_AUTHOR_EMAIL=ben@example.invalid", "GIT_COMMITTER_NAME=ben", "GIT_COMMITTER_EMAIL=ben@example.invalid")
 	run := func(dir, name string, args ...string) string {
 		t.Helper()
@@ -241,6 +262,7 @@ func TestFailoverEndToEnd(t *testing.T) {
 		t.Fatalf("failover start: %v\n%s%s", err, out, e)
 	}
 	waitRule(true)
+	waitNotes(1)
 	clone := filepath.Join(t.TempDir(), "app")
 	run("", "git", "clone", "-q", "https://github.com/"+x.hub.Org+"/app.git", clone)
 	if err := os.WriteFile(filepath.Join(clone, "fix.txt"), []byte("fix\n"), 0o600); err != nil {
@@ -297,4 +319,17 @@ func TestFailoverEndToEnd(t *testing.T) {
 	if issue == nil || issue.Title != "outage bug" || issue.Author != "ben-gh" || !strings.HasPrefix(issue.Body, "found during the outage\n\n<sub>Written on GitCove at ") {
 		t.Fatalf("issue on GitHub after replay: %+v", issue)
 	}
+
+	// Degraded mode is the admin's switch too, and the agent follows it; pausing replay keeps Git on GitCove.
+	for _, step := range []struct {
+		cmd, mode string
+		on        bool
+	}{{"start", "degraded", true}, {"pause", "degraded-paused", true}, {"start", "degraded", true}, {"stop", "normal", false}} {
+		if out, e, err := x.cove("degraded", step.cmd); err != nil {
+			t.Fatalf("degraded %s: %v\n%s%s", step.cmd, err, out, e)
+		}
+		x.waitStatus(t, srvLog, "degraded "+step.cmd, func(s status) bool { return s.Mode == step.mode })
+		waitRule(step.on)
+	}
+	waitNotes(4) // failover on and off, degraded on and off
 }

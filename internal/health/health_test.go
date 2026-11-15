@@ -25,7 +25,7 @@ type rig struct {
 	repo   int64
 }
 
-func newRig(t *testing.T, auto Auto) *rig {
+func newRig(t *testing.T, lim Thresholds) *rig {
 	hub := fakehub.New(t, 1)
 	hub.AddRepo(t, "app")
 	st, err := store.Open(filepath.Join(t.TempDir(), "cove.db"))
@@ -37,22 +37,18 @@ func newRig(t *testing.T, auto Auto) *rig {
 	if r.repo, err = st.UpsertRepo(context.Background(), fakehub.RepoID("app"), hub.Org, "app", "main"); err != nil {
 		t.Fatal(err)
 	}
-	r.c = r.checker(auto)
+	gh := &ghclient.App{API: r.hub.URL, AppID: r.hub.AppID, Key: r.hub.Key, Org: r.hub.Org, HTTP: &http.Client{Timeout: 2 * time.Second}}
+	r.c = &Checker{GH: gh, HTTP: &http.Client{Timeout: 2 * time.Second}, API: r.hub.URL, GitURL: r.hub.URL, SSHAddr: r.hub.SSH,
+		Store: r.st, Log: slog.New(slog.DiscardHandler), Limits: lim, Now: func() time.Time { return r.clock },
+		Alert: func(msg string) { r.alerts = append(r.alerts, msg) }}
 	return r
 }
 
-// checker is a fresh Checker on the rig's store, as after a restart.
-func (r *rig) checker(auto Auto) *Checker {
-	gh := &ghclient.App{API: r.hub.URL, AppID: r.hub.AppID, Key: r.hub.Key, Org: r.hub.Org, HTTP: &http.Client{Timeout: 2 * time.Second}}
-	return &Checker{GH: gh, HTTP: &http.Client{Timeout: 2 * time.Second}, API: r.hub.URL, GitURL: r.hub.URL, SSHAddr: r.hub.SSH,
-		Store: r.st, Log: slog.New(slog.DiscardHandler), Auto: auto, Now: func() time.Time { return r.clock },
-		Alert: func(msg string) { r.alerts = append(r.alerts, msg) }}
-}
-
 // run checks n times under faults f, alternating with healthy checks if flap is set, and fails
-// if the mode is ever one of never.
-func (r *rig) run(n int, f fakehub.Faults, flap bool, never ...store.Mode) {
+// if the mode ever changes: only the admin switches.
+func (r *rig) run(n int, f fakehub.Faults, flap bool) {
 	r.t.Helper()
+	m := r.mode()
 	for i := range n {
 		if flap && i%2 == 1 {
 			r.hub.SetFaults(fakehub.Faults{})
@@ -61,10 +57,8 @@ func (r *rig) run(n int, f fakehub.Faults, flap bool, never ...store.Mode) {
 		}
 		r.clock = r.clock.Add(30 * time.Second)
 		r.c.Check(context.Background())
-		for _, m := range never {
-			if r.mode() == m {
-				r.t.Fatalf("check %d of %d under %+v: mode %s", i+1, n, f, m)
-			}
+		if got := r.mode(); got != m {
+			r.t.Fatalf("check %d of %d under %+v: mode %s, was %s", i+1, n, f, got, m)
 		}
 	}
 }
@@ -77,10 +71,10 @@ func (r *rig) mode() store.Mode {
 	return m
 }
 
-func (r *rig) want(m store.Mode) {
+func (r *rig) setMode(m store.Mode) {
 	r.t.Helper()
-	if got := r.mode(); got != m {
-		r.t.Fatalf("mode %s, want %s; alerts:\n%s", got, m, strings.Join(r.alerts, "\n"))
+	if err := r.st.SetMode(context.Background(), "cli", m); err != nil {
+		r.t.Fatal(err)
 	}
 }
 
@@ -96,26 +90,32 @@ func (r *rig) lastAlert() string {
 
 var down = fakehub.Faults{APIDown: true, GitDown: true, SSHDown: true}
 
-// TestNoFalseAlarms: with automatic failover on, nothing short of every path failing for ten
-// minutes starts it, and the alerts name the broken paths.
-func TestNoFalseAlarms(t *testing.T) {
-	r := newRig(t, Auto{FailoverAfter: 10 * time.Minute, SlowAfter: 100 * time.Millisecond})
+// TestAlerts: the alerts name the broken paths, hint at failover or degraded mode, and never
+// change the mode, even through a full outage.
+func TestAlerts(t *testing.T) {
+	r := newRig(t, Thresholds{SlowAfter: 100 * time.Millisecond})
 	r.run(4, fakehub.Faults{}, false)
 	if a := r.lastAlert(); a != "" || len(r.c.Status()) != 4 {
 		t.Fatalf("healthy GitHub: alert %q, status %+v", a, r.c.Status())
 	}
 
-	r.run(80, down, true, store.Failover) // flapping for 40 minutes
-	r.run(30, fakehub.Faults{Delay: 200 * time.Millisecond}, false, store.Failover, store.Degraded)
-	r.run(30, fakehub.Faults{ErrorRate: 0.4}, false, store.Failover, store.Degraded)
-	r.want(store.Normal)
-	if a := r.lastAlert(); a != "" {
-		t.Fatalf("alert for a flaky GitHub that kept answering: %q", a)
+	// Flapping, slow and erroring for 40 minutes: one hint at degraded mode, no outage alert.
+	r.run(80, down, true)
+	r.run(30, fakehub.Faults{Delay: 200 * time.Millisecond}, false)
+	r.run(30, fakehub.Faults{ErrorRate: 0.4}, false)
+	if len(r.alerts) != 1 || !strings.Contains(r.alerts[0], "slow or flaky") || !strings.Contains(r.alerts[0], "20% over 5m0s") ||
+		!strings.Contains(r.alerts[0], "cove degraded start") {
+		t.Fatalf("alerts for a flaky GitHub that kept answering: %q", r.alerts)
+	}
+	r.alerts = nil
+	r.run(20, fakehub.Faults{}, false) // ten healthy minutes end the spell
+	if a := r.lastAlert(); a != "GitHub has answered every check in time for 10m0s." {
+		t.Fatalf("healthy again: %q", a)
 	}
 
 	// The App can't get a token, but GitHub answers anyone else: GitCove's problem, not an outage.
 	r.c.GH = &ghclient.App{API: r.hub.URL, AppID: r.hub.AppID, Key: r.hub.Key, Org: r.hub.Org, HTTP: &http.Client{Timeout: 2 * time.Second}}
-	r.run(30, fakehub.Faults{TokenDown: true}, false, store.Failover)
+	r.run(30, fakehub.Faults{TokenDown: true}, false)
 	if a := r.lastAlert(); a != "GitHub isn't answering on: api." {
 		t.Fatalf("token failure alert: %q", a)
 	}
@@ -132,96 +132,47 @@ func TestNoFalseAlarms(t *testing.T) {
 	if a := r.lastAlert(); a != "GitHub answers again on every path checked." {
 		t.Fatalf("recovery alert: %q", a)
 	}
-	r.want(store.Normal)
-}
 
-// TestAutoFailover: a full outage starts failover after ten minutes; it ends by itself no sooner
-// than its minimum run and after GitHub has been healthy, then a cooldown holds off the next.
-// An admin's failover is never ended by the checks, and a restart keeps track of an automatic one.
-func TestAutoFailover(t *testing.T) {
-	ctx := context.Background()
-	r := newRig(t, Auto{FailoverAfter: 10 * time.Minute})
-	r.run(4, fakehub.Faults{}, false)
-	r.run(19, down, false, store.Failover) // 9.5 minutes
-	if a := r.lastAlert(); !strings.Contains(a, "api, api-anon, git-https, git-ssh.") || !strings.Contains(a, "starts by itself if this lasts 10m0s") {
+	// A full outage hints at failover, for as long as it lasts, and starts nothing.
+	r.run(60, down, false)
+	if a := r.lastAlert(); !strings.Contains(a, "api, api-anon, git-https, git-ssh.") || !strings.Contains(a, "cove failover start") {
 		t.Fatalf("outage alert: %q", a)
 	}
-	r.run(1, down, false)
-	r.want(store.Failover)
-	if a := r.lastAlert(); !strings.Contains(a, "failover started by itself") {
-		t.Fatalf("failover alert: %q", a)
-	}
-	r.run(59, fakehub.Faults{}, false, store.Reconciling) // healthy, but only 29.5 minutes since it started
-	r.run(1, fakehub.Faults{}, false)
-	r.want(store.Reconciling)
-	if a := r.lastAlert(); !strings.Contains(a, "automatic failover ended") {
-		t.Fatalf("end alert: %q", a)
-	}
-	for _, m := range []store.Mode{store.Replaying, store.Normal} { // the admin approves, replay finishes
-		if err := r.st.SetMode(ctx, "cli", m); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	r.run(40, down, false, store.Failover) // 20 minutes, inside the cooldown
-	r.run(20, down, false)
-	r.want(store.Failover)
-
-	// After a restart the new checker knows the failover was automatic, and ends it.
-	r.c = r.checker(Auto{FailoverAfter: 10 * time.Minute})
-	r.run(21, fakehub.Faults{}, false)
-	r.want(store.Reconciling)
-
-	// An admin's failover stays until the admin ends it.
-	for _, m := range []store.Mode{store.Failover} {
-		if err := r.st.SetMode(ctx, "cli", m); err != nil {
-			t.Fatal(err)
-		}
-	}
-	r.run(100, fakehub.Faults{}, false)
-	r.want(store.Failover)
 }
 
-// TestDegraded: a slow or flaky GitHub puts GitCove in degraded mode, never failover, and it
-// leaves once GitHub has been healthy for ten minutes and nothing is left to replay.
-func TestDegraded(t *testing.T) {
-	ctx := context.Background()
-	r := newRig(t, Auto{FailoverAfter: 10 * time.Minute, Degraded: true, SlowAfter: 100 * time.Millisecond})
-	r.run(20, fakehub.Faults{ErrorRate: 0.01}, false, store.Degraded)
-	r.run(30, fakehub.Faults{Delay: 200 * time.Millisecond}, false, store.Failover)
-	r.want(store.Degraded)
-	if a := r.lastAlert(); !strings.Contains(a, "entered degraded mode") {
-		t.Fatalf("degraded alert: %q", a)
+// TestDegradedHints: in degraded mode the checks never end it, but say when GitHub looks healthy
+// again (offering to resume replay if it's paused), and a full outage there hints at failover
+// without starting it.
+func TestDegradedHints(t *testing.T) {
+	r := newRig(t, Thresholds{SlowAfter: 100 * time.Millisecond})
+	r.run(20, fakehub.Faults{Delay: 200 * time.Millisecond}, false)
+	if a := r.lastAlert(); !strings.Contains(a, "cove degraded start") {
+		t.Fatalf("flaky alert: %q", a)
 	}
-
-	// Work arrives; GitHub recovers, but degraded mode lasts until the work is replayed.
-	if err := r.st.RecordPush(ctx, r.repo, "ben", []store.RefUpdate{{Branch: "fix", Old: "", New: "abc"}}); err != nil {
-		t.Fatal(err)
-	}
-	r.run(30, fakehub.Faults{}, false)
-	r.want(store.Degraded)
-	items, _ := r.st.RefItems(ctx, 0, "pending")
-	if err := r.st.Finish(ctx, []int64{items[0].ID}, "done", "test", "", ""); err != nil {
-		t.Fatal(err)
-	}
-	r.run(1, fakehub.Faults{}, false)
-	r.want(store.Normal)
-
-	// Flapping after the cooldown: degraded again, still never failover.
+	r.setMode(store.Degraded)
 	r.run(60, fakehub.Faults{}, false)
-	r.run(40, down, true, store.Failover)
-	r.want(store.Degraded)
-
-	// A real outage while degraded escalates to failover.
-	r.run(21, down, false)
-	r.want(store.Failover)
+	if a := r.lastAlert(); !strings.Contains(a, "cove degraded stop") || strings.Contains(a, "cove degraded start") {
+		t.Fatalf("healthy alert in degraded mode: %q", a)
+	}
+	// Paused, the same alert also offers resuming.
+	r.run(20, fakehub.Faults{Delay: 200 * time.Millisecond}, false)
+	r.setMode(store.Paused)
+	r.run(60, fakehub.Faults{}, false)
+	if a := r.lastAlert(); !strings.Contains(a, "Resume replay with `cove degraded start`") || !strings.Contains(a, "cove degraded stop") {
+		t.Fatalf("healthy alert while paused: %q", a)
+	}
+	r.setMode(store.Degraded)
+	r.run(40, down, false)
+	if a := r.lastAlert(); !strings.Contains(a, "cove failover start") {
+		t.Fatalf("outage alert in degraded mode: %q", a)
+	}
 }
 
-// TestBlockedSSH: a server that can't reach GitHub's SSH port at all gets an alert, not degraded mode.
+// TestBlockedSSH: a server that can't reach GitHub's SSH port at all gets an alert, not a hint at degraded mode.
 func TestBlockedSSH(t *testing.T) {
-	r := newRig(t, Auto{Degraded: true})
-	r.run(40, fakehub.Faults{SSHDown: true}, false, store.Degraded)
-	if a := r.lastAlert(); !strings.Contains(a, "on: git-ssh.") || !strings.Contains(a, "COVE_GITHUB_SSH=off") {
-		t.Fatalf("alert: %q", a)
+	r := newRig(t, Thresholds{})
+	r.run(40, fakehub.Faults{SSHDown: true}, false)
+	if len(r.alerts) != 1 || !strings.Contains(r.alerts[0], "on: git-ssh.") || !strings.Contains(r.alerts[0], "COVE_GITHUB_SSH=off") {
+		t.Fatalf("alerts: %q", r.alerts)
 	}
 }

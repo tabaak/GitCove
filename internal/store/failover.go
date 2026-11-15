@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 )
 
 // Mode is the instance mode (design section 6).
@@ -20,20 +19,22 @@ const (
 	Failover    Mode = "failover"
 	Reconciling Mode = "reconciling"
 	Replaying   Mode = "replaying"
-	Degraded    Mode = "degraded" // GitHub slow or flaky: writes are taken and replayed in the background (design 8.14)
+	Degraded    Mode = "degraded"        // GitHub slow or flaky: writes are taken and replayed in the background (design 8.14)
+	Paused      Mode = "degraded-paused" // degraded mode with its replay paused by the admin: writes are still taken
 )
 
 // transitions lists, for each mode, the modes it may be entered from.
 var transitions = map[Mode][]Mode{
-	Failover:    {Normal, Reconciling, Replaying, Degraded}, // Replaying: GitHub failed again during replay
+	Failover:    {Normal, Reconciling, Replaying, Degraded, Paused}, // Replaying: GitHub failed again during replay
 	Reconciling: {Failover},
-	Replaying:   {Reconciling, Normal}, // Normal: replaying items an admin re-queued
-	Normal:      {Replaying, Degraded}, // only once no item is pending or sending
-	Degraded:    {Normal},
+	Replaying:   {Reconciling, Normal, Degraded, Paused}, // Normal: replaying items an admin re-queued; Degraded, Paused: stopped with items left
+	Normal:      {Replaying, Degraded, Paused},           // only once no item is pending or sending
+	Degraded:    {Normal, Paused},
+	Paused:      {Degraded},
 }
 
 // TakesWrites says whether pushes and web changes are accepted and queued.
-func (m Mode) TakesWrites() bool { return m == Failover || m == Degraded }
+func (m Mode) TakesWrites() bool { return m == Failover || m == Degraded || m == Paused }
 
 // Replays says whether replay may write to GitHub.
 func (m Mode) Replays() bool { return m == Replaying || m == Degraded }
@@ -93,29 +94,6 @@ func (s *Store) Unreplayed(ctx context.Context) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM outbox WHERE state IN ('pending', 'sending')").Scan(&n)
 	return n, err
-}
-
-// ModeHistory is what the health checks need to know about mode changes after a restart.
-type ModeHistory struct {
-	LastBy  string    // who made the latest change
-	LastAt  time.Time // and when
-	EndedAt time.Time // when actor last ended a failover or degraded mode; zero if never
-}
-
-func (s *Store) ModeHistory(ctx context.Context, actor string) (ModeHistory, error) {
-	var h ModeHistory
-	var by, at, ended sql.NullString
-	err := s.db.QueryRowContext(ctx, `SELECT (SELECT actor FROM audit_log WHERE action = 'mode' ORDER BY id DESC LIMIT 1),
-		(SELECT at FROM audit_log WHERE action = 'mode' ORDER BY id DESC LIMIT 1),
-		(SELECT at FROM audit_log WHERE action = 'mode' AND actor = ? AND (detail LIKE '% -> reconciling' OR detail LIKE '% -> normal')
-			ORDER BY id DESC LIMIT 1)`, actor).Scan(&by, &at, &ended)
-	if err != nil {
-		return h, err
-	}
-	h.LastBy = by.String
-	h.LastAt, _ = time.Parse(time.RFC3339, at.String)
-	h.EndedAt, _ = time.Parse(time.RFC3339, ended.String)
-	return h, nil
 }
 
 // AllowProtected turns on or off direct pushes to protected branches for the current failover.
