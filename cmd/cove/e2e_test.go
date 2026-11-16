@@ -6,10 +6,14 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -94,9 +98,10 @@ func (x *e2e) serve(t *testing.T) (*bytes.Buffer, chan error, *exec.Cmd) {
 }
 
 type status struct {
-	Mode   string
-	Repos  int
-	GitHub map[string]struct{ OK bool }
+	Mode         string
+	Repos        int
+	OldestSynced string `json:"oldest_synced_at"`
+	GitHub       map[string]struct{ OK bool }
 }
 
 func (x *e2e) waitStatus(t *testing.T, srvLog *bytes.Buffer, what string, ok func(status) bool) {
@@ -373,4 +378,83 @@ func TestFailoverEndToEnd(t *testing.T) {
 	if got, want := strings.Join(switches, " "), "failover started. failover ended. degraded mode on. replay paused. degraded mode on. degraded mode off."; got != want {
 		t.Fatalf("team messages:\n%s\nwant\n%s\nall:\n%s", got, want, all)
 	}
+}
+
+// cove restore lists what a force-push replaced, brings it back, and with -push also puts it on GitHub.
+func TestRestoreEndToEnd(t *testing.T) {
+	x := start(t)
+	old := x.hub.Refs(t, "app")["refs/heads/feature"]
+	sha := x.hub.Commit(t, "app", "scratch")
+	if out, err := exec.Command("git", "-C", x.hub.Dir("app"), "update-ref", "refs/heads/feature", sha).CombinedOutput(); err != nil {
+		t.Fatalf("force-push: %v: %s", err, out)
+	}
+	if _, e, err := x.cove("sync"); err != nil {
+		t.Fatalf("sync: %v\n%s", err, e)
+	}
+	list, e, err := x.cove("restore", "fakeorg/app", "feature")
+	if err != nil {
+		t.Fatalf("restore list: %v\n%s", err, e)
+	}
+	lines := strings.Split(list, "\n")
+	if len(lines) != 2 || !strings.HasSuffix(lines[1], old) {
+		t.Fatalf("restore list = %q, want one saved tip %s", list, old)
+	}
+	stamp := strings.Fields(lines[1])[0]
+	if out, e, err := x.cove("restore", "-push", "fakeorg/app", "feature", stamp); err != nil {
+		t.Fatalf("restore -push: %v\n%s\n%s", err, out, e)
+	}
+	branch := "refs/heads/gitcove/restored-feature-" + stamp
+	if got := x.hub.Refs(t, "app")[branch]; got != old {
+		t.Fatalf("GitHub %s = %q, want %s", branch, got, old)
+	}
+	if got := x.hub.Refs(t, "app")["refs/heads/feature"]; got != sha {
+		t.Fatalf("restore moved feature on GitHub to %s", got)
+	}
+	if _, e, err := x.cove("sync"); err != nil {
+		t.Fatalf("sync after restore: %v\n%s", err, e)
+	}
+}
+
+// With syncs an hour apart, only a webhook can bring a new commit to the running server.
+func TestWebhookEndToEnd(t *testing.T) {
+	x := start(t)
+	secret := filepath.Join(t.TempDir(), "webhook-secret")
+	if err := os.WriteFile(secret, []byte("s3cret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	x.env = append(x.env, "COVE_WEBHOOK_SECRET_FILE="+secret)
+	var synced string
+	for _, kv := range x.env {
+		if d, ok := strings.CutPrefix(kv, "COVE_DATA="); ok {
+			synced = filepath.Join(d, "repos", fmt.Sprintf("%d.git", fakehub.RepoID("app")))
+		}
+	}
+	before := x.hub.Refs(t, "app")["refs/heads/main"]
+	srvLog, _, _ := x.serve(t)
+	var first string
+	x.waitStatus(t, srvLog, "server up", func(s status) bool { first = s.OldestSynced; return s.Repos == 1 })
+	x.waitStatus(t, srvLog, "the first cycle", func(s status) bool { return s.OldestSynced != first })
+	next := x.hub.Commit(t, "app", "main")
+
+	body := fmt.Sprintf(`{"ref":"refs/heads/main","before":%q,"after":%q,"repository":{"id":%d}}`, before, next, fakehub.RepoID("app"))
+	mac := hmac.New(sha256.New, []byte("s3cret"))
+	mac.Write([]byte(body))
+	req, _ := http.NewRequest("POST", "http://"+x.addr+"/webhook", strings.NewReader(body))
+	req.Header.Set("X-GitHub-Event", "push")
+	req.Header.Set("X-GitHub-Delivery", "72d3162e-cc78-11e3-81ab-4c9367dc0958")
+	req.Header.Set("X-Hub-Signature-256", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("webhook: status %d", resp.StatusCode)
+	}
+	for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(100 * time.Millisecond) {
+		if out, _ := exec.Command("git", "-C", synced, "rev-parse", "refs/heads/main").Output(); strings.TrimSpace(string(out)) == next {
+			return
+		}
+	}
+	t.Fatalf("main never reached %s after the webhook", next)
 }

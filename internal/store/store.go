@@ -144,8 +144,10 @@ func scanRepo(row interface{ Scan(...any) error }) (Repo, error) {
 	return r, err
 }
 
-func (s *Store) Repos(ctx context.Context) ([]Repo, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT "+repoCols+" FROM repos ORDER BY owner, name")
+func (s *Store) Repos(ctx context.Context) ([]Repo, error) { return s.repos(ctx, "") }
+
+func (s *Store) repos(ctx context.Context, where string) ([]Repo, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT "+repoCols+" FROM repos "+where+" ORDER BY owner, name")
 	if err != nil {
 		return nil, err
 	}
@@ -299,4 +301,9 @@ func (s *Store) Audit(ctx context.Context) ([]AuditEntry, error) {
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// Log records an admin action that changes nothing in the database, such as a restore.
+func (s *Store) Log(ctx context.Context, actor, action, detail string) error {
+	return s.tx(ctx, func(tx *sql.Tx) error { return audit(tx, actor, action, detail) })
 }

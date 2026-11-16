@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
@@ -384,4 +385,61 @@ func repoCmd(cfg config, args []string) error {
 		return err
 	}
 	return st.SetPROnly(ctx, cliActor(), r, on)
+}
+
+// restoreCmd lists a repo's saved branch tips, or brings one back as a new branch.
+func restoreCmd(cfg config, args []string) error {
+	fs := flag.NewFlagSet("restore", flag.ContinueOnError)
+	push := fs.Bool("push", false, "also create the branch on GitHub (needs the read-write App)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() < 1 || fs.NArg() > 3 {
+		return errors.New("restore: want [-push] OWNER/REPO [BRANCH [STAMP]]")
+	}
+	a, err := build(cfg)
+	if err != nil {
+		return err
+	}
+	defer a.store.Close()
+	ctx := context.Background()
+	r, err := repoArg(ctx, a.store, fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	if fs.NArg() < 3 {
+		saved, err := a.git.History(ctx, r.GitHubID)
+		if err != nil {
+			return err
+		}
+		w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(w, "STAMP\tBRANCH\tCOMMIT")
+		for _, s := range saved {
+			if fs.NArg() == 1 || s.Branch == fs.Arg(1) {
+				fmt.Fprintf(w, "%s\t%s\t%s\n", s.At, s.Branch, s.Commit)
+			}
+		}
+		return w.Flush()
+	}
+	name, sha, err := a.git.Restore(ctx, r.GitHubID, fs.Arg(1), fs.Arg(2))
+	if err != nil {
+		return err
+	}
+	detail := fmt.Sprintf("%s %s at %s -> %s (%s)", r.FullName(), fs.Arg(1), fs.Arg(2), name, sha)
+	if err := a.store.Log(ctx, cliActor(), "restore", detail); err != nil {
+		return err
+	}
+	fmt.Printf("restored %s as %s on GitCove\n", sha, name)
+	if !*push {
+		return nil
+	}
+	tok, err := a.mirror.GH.GitToken(ctx)
+	if err != nil {
+		return err
+	}
+	if err := a.git.Push(ctx, r.GitHubID, r.Owner, r.Name, tok, sha, name); err != nil {
+		return fmt.Errorf("push to GitHub (a read-only App can't; fetch %s from GitCove and push it yourself): %w", name, err)
+	}
+	fmt.Printf("pushed %s to GitHub\n", name)
+	return a.store.Log(ctx, cliActor(), "restore.push", detail)
 }

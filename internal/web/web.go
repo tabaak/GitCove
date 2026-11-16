@@ -3,9 +3,13 @@
 package web
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -25,11 +29,15 @@ type Server struct {
 	Log    *slog.Logger
 
 	StaleAfter time.Duration // a copy older than this gets a warning; 0: only a failed sync does
+
+	WebhookSecret []byte          // the GitHub App's webhook secret; nil turns /webhook off
+	Wake          chan<- struct{} // told when a webhook queues a sync
 }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /status", s.status)
+	mux.HandleFunc("POST /webhook", s.webhook)
 	mux.HandleFunc("GET /login", s.loginForm)
 	mux.HandleFunc("POST /login", s.login)
 	mux.HandleFunc("POST /logout", s.logout)
@@ -90,6 +98,50 @@ func (s *Server) git(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.Git.Handler(repo.GitHubID, rest, "COVE_DB="+s.Store.Path(), fmt.Sprintf("COVE_REPO_ID=%d", repo.ID), "COVE_PUSHER="+pusher).ServeHTTP(w, r)
+}
+
+// webhook takes GitHub's deliveries. Each is only a hint to sync its repo, which fetches GitHub's
+// current state, so the payload's content never reaches the database. The hint is stored before the
+// 2xx answer, in the same transaction as the delivery ID that makes a redelivery a no-op.
+func (s *Server) webhook(w http.ResponseWriter, r *http.Request) {
+	if len(s.WebhookSecret) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 25<<20)) // GitHub caps payloads at 25 MB
+	if err != nil {
+		http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
+		return
+	}
+	mac := hmac.New(sha256.New, s.WebhookSecret)
+	mac.Write(body)
+	if !hmac.Equal([]byte(r.Header.Get("X-Hub-Signature-256")), []byte("sha256="+hex.EncodeToString(mac.Sum(nil)))) {
+		http.Error(w, "bad signature", http.StatusUnauthorized)
+		return
+	}
+	var p struct {
+		Action     string `json:"action"`
+		Repository struct {
+			ID int64 `json:"id"`
+		} `json:"repository"`
+	}
+	delivery := r.Header.Get("X-GitHub-Delivery")
+	if json.Unmarshal(body, &p) != nil || p.Repository.ID == 0 || delivery == "" {
+		w.WriteHeader(http.StatusNoContent) // a ping or an installation event: no repo to sync
+		return
+	}
+	queued, err := s.Store.QueueWebhook(r.Context(), delivery, p.Repository.ID, p.Action == "deleted")
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if queued {
+		select {
+		case s.Wake <- struct{}{}:
+		default: // a wake is already pending
+		}
+	}
+	w.WriteHeader(http.StatusAccepted)
 }
 
 // status is public, so it shows counts and health but no repo names or errors.

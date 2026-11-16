@@ -23,6 +23,7 @@ type Mirror struct {
 	Git          *gitstore.Store
 	FetchTimeout time.Duration
 	Log          *slog.Logger
+	Wake         chan struct{} // a webhook queued a sync; buffered, size 1
 }
 
 // Cycle lists the installation's repos and syncs each one. A repo that fails is retried next cycle.
@@ -48,9 +49,15 @@ func (m *Mirror) Cycle(ctx context.Context) error {
 // SyncRepo refreshes one repo's branch protection, fetches it, and syncs its issues, comments
 // and labels, then records the outcome.
 func (m *Mirror) SyncRepo(ctx context.Context, r store.Repo) error {
+	if err := m.Store.ClearWanted(ctx, r.ID); err != nil {
+		return err
+	}
 	// Branches are listed before the fetch, so a branch created in between is fetched but not
 	// listed, and counts as protected until the next sync.
 	err := errors.Join(m.syncBranches(ctx, r), m.fetch(ctx, r), m.syncIssues(ctx, r))
+	if err == nil {
+		err = m.fullScan(ctx, r)
+	}
 	if err != nil {
 		err = fmt.Errorf("%s: %w", r.FullName(), err)
 	}
@@ -75,7 +82,7 @@ func (m *Mirror) syncBranches(ctx context.Context, r store.Repo) error {
 // syncIssues backfills, then polls, issues, PRs and comments, oldest update first, saving a
 // cursor with each page so a backfill resumes where it stopped (design 7). The listing's since
 // stays fixed until something changes, so an idle repo costs two 304s and a label listing.
-// shortcut: deleted comments and issues stay until the weekly full scan of milestone 7.
+// Deletions are invisible here: fullScan finds them.
 func (m *Mirror) syncIssues(ctx context.Context, r store.Repo) error {
 	issuesCur, commentsCur := fmt.Sprintf("repo:%d:issues", r.ID), fmt.Sprintf("repo:%d:comments", r.ID)
 	since, err := m.Store.Cursor(ctx, issuesCur)
@@ -220,19 +227,145 @@ func (m *Mirror) fetch(ctx context.Context, r store.Repo) error {
 	})
 }
 
-// Run calls Cycle every interval until ctx ends.
+// ScanEvery is how often fullScan runs without a webhook reporting a deletion.
+const ScanEvery = 7 * 24 * time.Hour
+
+// fullScan lists every issue, comment and line comment, weekly or after a webhook reports a
+// deletion, and moves what GitHub no longer has to tombstones. A listing can skip an item when
+// others change while it's paged, so each missing item is checked with GitHub before burial.
+func (m *Mirror) fullScan(ctx context.Context, r store.Repo) error {
+	cur := store.FullScanCursor(r.ID)
+	last, err := m.Store.Cursor(ctx, cur)
+	if err != nil {
+		return err
+	}
+	started := time.Now().UTC().Format(time.RFC3339)
+	if last == "" { // the first sync's backfill just listed everything
+		return m.Store.SetCursor(ctx, cur, started)
+	}
+	if t, err := time.Parse(time.RFC3339, last); err == nil && time.Since(t) < ScanEvery {
+		return nil // last is store.ScanDue after a deletion webhook, which doesn't parse
+	}
+	seen := map[string]map[int64]bool{"issue": {}, "comment": {}, "review_comment": {}}
+	err = errors.Join(
+		m.GH.IssuesSince(ctx, r.Owner, r.Name, "", func(p []ghclient.Issue) error {
+			for _, i := range p {
+				seen["issue"][int64(i.Number)] = true
+			}
+			return nil
+		}),
+		m.GH.CommentsSince(ctx, r.Owner, r.Name, "", func(p []ghclient.Comment) error {
+			for _, c := range p {
+				seen["comment"][c.ID] = true
+			}
+			return nil
+		}),
+		m.GH.ReviewCommentsSince(ctx, r.Owner, r.Name, "", func(p []ghclient.ReviewComment) error {
+			for _, c := range p {
+				seen["review_comment"][c.ID] = true
+			}
+			return nil
+		}))
+	if err != nil {
+		return fmt.Errorf("full scan: %w", err)
+	}
+	for kind, listed := range seen {
+		known, err := m.Store.Known(ctx, r.ID, kind)
+		if err != nil {
+			return err
+		}
+		missing := map[int][]int64{} // by issue or PR number
+		for id, n := range known {
+			if !listed[id] {
+				missing[n] = append(missing[n], id)
+			}
+		}
+		var gone []int64
+		for n, ids := range missing {
+			still, err := m.stillThere(ctx, r, kind, n)
+			if err != nil {
+				return fmt.Errorf("full scan: check %s on #%d: %w", kind, n, err)
+			}
+			for _, id := range ids {
+				if !still[id] {
+					gone = append(gone, id)
+				}
+			}
+		}
+		if err := m.Store.Bury(ctx, r.ID, kind, gone, m.Git.Keep); err != nil {
+			return err
+		}
+	}
+	return m.Store.SetCursor(ctx, cur, started)
+}
+
+// stillThere asks GitHub which items of kind on issue or PR n exist, by ID (by number for an issue).
+func (m *Mirror) stillThere(ctx context.Context, r store.Repo, kind string, n int) (map[int64]bool, error) {
+	ids := map[int64]bool{}
+	var err error
+	switch kind {
+	case "issue":
+		_, err = m.GH.Issue(ctx, r.Owner, r.Name, n)
+		ids[int64(n)] = err == nil
+	case "comment":
+		var cs []ghclient.Comment
+		cs, err = m.GH.IssueComments(ctx, r.Owner, r.Name, n, "")
+		for _, c := range cs {
+			ids[c.ID] = true
+		}
+	case "review_comment":
+		var cs []ghclient.ReviewComment
+		cs, err = m.GH.ReviewComments(ctx, r.Owner, r.Name, n, 0, "")
+		for _, c := range cs {
+			ids[c.ID] = true
+		}
+	}
+	if se := (*ghclient.StatusError)(nil); errors.As(err, &se) && (se.Status == 404 || se.Status == 410) {
+		return ids, nil // the issue itself is gone, and with it everything on it
+	}
+	return ids, err
+}
+
+// Run calls Cycle every interval until ctx ends, and between cycles syncs the repos webhooks ask for.
 func (m *Mirror) Run(ctx context.Context, every time.Duration) {
-	for {
+	var due <-chan time.Time // a full interval after the last full cycle ended
+	for full := true; ; {
 		start := time.Now()
-		if err := m.Cycle(ctx); err != nil {
+		var err error
+		if full {
+			err = m.Cycle(ctx)
+		} else {
+			err = m.SyncWanted(ctx)
+		}
+		if err != nil {
 			m.Log.Warn("sync failed", "err", err)
 		} else {
-			m.Log.Info("sync done", "took", time.Since(start).Round(time.Millisecond))
+			m.Log.Info("sync done", "full", full, "took", time.Since(start).Round(time.Millisecond))
+		}
+		if full {
+			due = time.After(every)
 		}
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(every):
+		case <-due:
+			full = true
+		case <-m.Wake:
+			full = false
 		}
 	}
+}
+
+// SyncWanted syncs the repos webhooks asked for. A webhook is only a hint: the sync fetches
+// GitHub's current state, so dropped, repeated or reordered deliveries can't make it wrong.
+func (m *Mirror) SyncWanted(ctx context.Context) error {
+	repos, err := m.Store.WantedRepos(ctx)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, r := range repos {
+		errs = append(errs, m.SyncRepo(ctx, r))
+	}
+	return errors.Join(errs...)
 }

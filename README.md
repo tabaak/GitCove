@@ -39,6 +39,8 @@ Put TLS in front of it, for example with Caddy. Developers send their token as a
 | `COVE_APP_CLIENT_ID` | unset | The App's client ID. With the next two, lets people post their outage work under their own names (see below) |
 | `COVE_APP_CLIENT_SECRET_FILE` | unset | Path to a file holding the App's client secret |
 | `COVE_USER_KEY_FILE` | unset | Path to the key that encrypts people's GitHub tokens: 64 hex digits, e.g. from `openssl rand -hex 32`. Keep it off the data volume |
+| `COVE_WEBHOOK_SECRET_FILE` | unset | Path to a file holding the App's webhook secret. Turns on `POST /webhook` (see below) |
+| `COVE_RETENTION_DAYS` | `90` | How long saved branch tips and records of items deleted on GitHub are kept |
 | `COVE_GITHUB_SSH` | `github.com:22` | GitHub's SSH server, for the health check. `off` skips it, if GitCove's server can't reach that port at all |
 | `COVE_GITHUB_API`, `COVE_GITHUB_GIT` | `https://api.github.com`, `https://github.com` | GitHub endpoints, overridden only in tests |
 
@@ -54,6 +56,29 @@ cove token revoke 3
 ```
 
 Tokens are stored only as SHA-256 hashes. An admin assigns each token's repos by hand, and a repo can be assigned only after its first sync. Token creation and revocation are written to the audit log. A token that can read a repo can also push to it and change its issues during failover. There is no separate write permission yet, and permission sync from GitHub comes in milestone 7.
+
+### Restoring branches
+
+Before a sync moves a branch, tag or PR ref in a way that loses commits (a force-push or a deleted branch on GitHub), GitCove saves the old tip under `refs/gitcove/history/<stamp>/...`, in the same atomic update that moves the ref. Saved tips are kept for `COVE_RETENTION_DAYS`, and also keep Git from garbage-collecting those commits.
+
+```sh
+cove restore my-org/api                                   # every saved branch tip: STAMP, BRANCH, COMMIT
+cove restore my-org/api feature                           # only feature's
+cove restore my-org/api feature 20261115T101500.123Z          # new branch gitcove/restored-feature-20261115T101500.123Z
+cove restore -push my-org/api feature 20261115T101500.123Z    # ...and create it on GitHub too
+```
+
+A restore never moves an existing branch: it makes a new one, which syncs leave alone even if GitHub doesn't have it. `-push` needs the read-write App, and creates the branch without forcing. With the read-only App, a developer fetches the restored branch from GitCove and pushes it to GitHub. Restores are written to the audit log.
+
+Saved tips are hidden from clients. GitCove serves Git protocol v0 only, because protocol v2 hands out any commit in the repo to a client that knows its ID, hidden or not. Under v0 a client gets only what's reachable from the refs it's shown. So a force-pushed secret can't be fetched from GitCove by its commit ID, until someone restores that branch. Two limits: during failover, a token holder who knows the commit ID could craft a push that builds on it, making it reachable; and the secret stays on GitCove's disk for the retention window. Removing data early is `cove purge` (milestone 8).
+
+### Webhooks
+
+Polling every `COVE_SYNC_INTERVAL` is enough on its own. Webhooks make syncs prompt. In the GitHub App's settings, set the webhook URL to `https://<gitcove>/webhook`, set a secret, subscribe to the push, create, delete, issues, issue comment, pull request, pull request review and pull request review comment events, and put the secret in `COVE_WEBHOOK_SECRET_FILE`.
+
+GitCove checks each delivery's `X-Hub-Signature-256` and reads only the repo from it. A delivery is just a hint to sync that repo, which fetches GitHub's current state, so a dropped, repeated or out-of-order delivery can't make GitCove wrong. The hint and the delivery ID (`X-GitHub-Delivery`) are stored in one transaction before GitCove answers, so a crash loses no hint and a redelivery queues nothing. A delivery that reports a deletion makes that sync a full scan.
+
+Listings can't show deletions, so a full scan also runs weekly. It lists every issue, comment and line comment, checks each one GitCove has but the listing didn't show directly with GitHub, and moves those GitHub no longer has to `tombstones`, kept for `COVE_RETENTION_DAYS`. An issue moved to another repo stays on GitCove.
 
 ### Failover and replay
 
@@ -185,20 +210,23 @@ The web interface's banner shows the mode, the number of changes on their way, a
 
 - Each repo is a bare repository named by its GitHub ID, so a rename keeps it.
 - A fetch writes only GitHub's copy of the refs, under `refs/gitcove/github/`. The refs developers see (`refs/heads`, `refs/tags`, `refs/pull`) are then moved to match in one atomic compare-and-swap update. Branches with queued or conflicted pushes are left alone. A fetch that fails or is cut off changes nothing, and the next cycle retries it.
-- Each sync also lists each repo's branches to record GitHub's `protected` flag, and syncs its issues, PRs, comments and labels. Issues and comments are listed oldest update first from a saved cursor, so the first sync of a big repo resumes where it stopped. An idle repo costs two 304 responses and a label listing per cycle. Deleted comments stay on GitCove until the weekly full scan of milestone 7.
+- Each sync also lists each repo's branches to record GitHub's `protected` flag, and syncs its issues, PRs, comments and labels. Issues and comments are listed oldest update first from a saved cursor, so the first sync of a big repo resumes where it stopped. An idle repo costs two 304 responses and a label listing per cycle. Deleted issues and comments go at the next full scan: weekly, or when a webhook reports a deletion.
 - Pushes go through a `pre-receive` hook (`cove hook pre-receive`) installed outside every repo. Clients can't write `refs/gitcove/`.
-- `refs/gitcove/` is hidden from clients' ref listings. Whether a client can still fetch a hidden commit by its ID is tested in milestone 7.
+- `refs/gitcove/` is hidden from clients' ref listings, and Git is served over protocol v0 only, so a client can't fetch a hidden commit by its ID (see Restoring branches).
+- A sync that would lose commits from a served ref first saves the old tip as a history ref, in the same atomic update. Expired history refs are removed in that update too.
 - The installation token reaches `git` through the environment, never the command line.
 - The health check makes an API call (`/rate_limit`, which doesn't count against the limit) and an unauthenticated Git request. Any Git answer below 500 counts as up.
 
 ## Development
 
 ```sh
-go test ./...                                                        # includes the five fault campaigns on 10 seeds
+go test ./...                                                        # includes the six fault campaigns on 10 seeds
 COVE_SEEDS=200 go test -race ./internal/mirror ./internal/replay     # the nightly campaigns
 ```
 
-`fakehub/` is a GitHub stand-in. It serves App authentication, repo and branch listing, Git smart HTTP including pushes, and PR creation. It refuses pushes the way GitHub refuses them from an App: protected branches, and workflow trees that match no branch tip. It logs every push, and it injects seeded faults: API or Git down, HTTP 500s, timeouts, pack responses cut off partway, writes carried out but never answered, slow answers, SSH down, and failing installation tokens. It also answers SSH greetings, for the health check. The campaign in `internal/mirror` runs rounds of random faults and GitHub-side changes (new commits, new and deleted branches, force-pushes). It checks every store with `git fsck` after each round, and checks that one clean cycle afterwards brings every served ref level with GitHub. To repeat a failing seed, run `COVE_SEEDS=N go test -run 'TestFaultCampaign/seed=K$' ./internal/mirror`.
+`fakehub/` is a GitHub stand-in. It serves App authentication, repo and branch listing, Git smart HTTP including pushes, and PR creation. It refuses pushes the way GitHub refuses them from an App: protected branches, and workflow trees that match no branch tip. It logs every push, and it injects seeded faults: API or Git down, HTTP 500s, timeouts, pack responses cut off partway, writes carried out but never answered, slow answers, SSH down, and failing installation tokens. It also answers SSH greetings, for the health check. The campaign in `internal/mirror` runs rounds of random faults and GitHub-side changes (new commits, new and deleted branches, force-pushes). It checks every store with `git fsck` after each round, that one clean cycle afterwards brings every served ref level with GitHub, and that every tip GitCove ever served is still in a served ref or a history ref. `TestRestoreForcePushedBranch` restores a force-pushed branch, syncs straight after and again once history expires, and checks that no protocol version (also asked by hand, as a hostile client would) can fetch hidden history by commit ID.
+
+`TestWebhookCampaign` makes GitHub-side changes (commits, force-pushes, deleted branches, new, edited and deleted issues and comments), each announced by a webhook that may be dropped, repeated, reordered or redelivered much later, plus forged ones, and syncs only what webhooks ask for. A repo whose webhooks got through must then match GitHub, except items deleted while every "deleted" webhook was dropped. Then a full sync must bring everything level, and a second must change nothing. `TestFullScanBuries` checks the scan buries deleted issues, comments and line comments and keeps the rest. `TestWebhookEndToEnd` sends a signed delivery to the real server, with syncs an hour apart, and checks that the commit arrives. To repeat a failing seed, run `COVE_SEEDS=N go test -run 'TestFaultCampaign/seed=K$' ./internal/mirror`.
 
 The replay campaign in `internal/replay` (`TestReplayCampaign`) runs failovers in which developers push while GitHub is down and GitHub moves on. Meanwhile there are new commits, workflow changes, and developers pushing the same commits to GitHub themselves. Then it replays under faults, with GitCove killed at each crash point, GitHub moving between replay's fetch and its push, and up to three repeat outages with more pushes. After each run it checks:
 
@@ -232,13 +260,13 @@ CI runs gofmt, `go vet`, golangci-lint, the tests with `-race`, and a Docker bui
 ```
 cmd/cove/            server, admin CLI and developer agent in one binary
 internal/ghclient/   GitHub API behind one interface: App JWT, installation tokens, ETags, rate limiter, write budget, device flow
-internal/gitstore/   bare repos, fetch, served refs, push, pre-receive hook, local merges, diffs, git http-backend
-internal/store/      SQLite in WAL mode, migrations, mode, outbox, mirrored issues, PRs and reviews, tokens, audit log
-internal/mirror/     the sync loop (the plan's internal/sync): refs, branch protection, issues and comments
+internal/gitstore/   bare repos, fetch, served refs, history refs and restore, push, pre-receive hook, local merges, diffs, git http-backend
+internal/store/      SQLite in WAL mode, migrations, mode, outbox, mirrored issues, PRs and reviews, webhook queue, tombstones, tokens, audit log
+internal/mirror/     the sync loop (the plan's internal/sync): refs, branch protection, issues and comments, webhook-driven syncs, the full scan
 internal/replay/     replay plan, history comparison, pushes and fallback PRs, replay of issues, comments, PRs, reviews and merges
 internal/auth/       people's GitHub tokens: device flow, encryption, refresh
 internal/health/     probes on four paths and alerts
-internal/web/        HTTP: Git for developers, the web interface, /status
+internal/web/        HTTP: Git for developers, the web interface, /status, /webhook
 fakehub/             fault-injecting GitHub stand-in
 ```
 

@@ -31,6 +31,7 @@ type Issue struct {
 	BaseSHA          string // PRs only: the base's commit when the PR was opened
 	Merged, Fork     bool   // PRs only
 	Created, Updated time.Time
+	Deleted          bool      // by an admin: GitHub answers 410 and lists it no more
 	visible          time.Time // listings show it from then on: the listing-lag fault
 }
 
@@ -141,7 +142,7 @@ func (h *Hub) listIssues(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	var list []*Issue
 	for _, i := range h.meta(r.PathValue("repo")).issues {
-		if !time.Now().Before(i.visible) && (state == "all" || i.State == state) && (creator == "" || i.Author == creator) {
+		if !i.Deleted && !time.Now().Before(i.visible) && (state == "all" || i.State == state) && (creator == "" || i.Author == creator) {
 			c := *i
 			list = append(list, &c)
 		}
@@ -173,7 +174,9 @@ func (h *Hub) issue(w http.ResponseWriter, r *http.Request, f func(m *meta, i *I
 	h.mu.Lock()
 	m := h.meta(r.PathValue("repo"))
 	status, out := http.StatusNotFound, any(map[string]any{"message": "Not Found"})
-	if n >= 1 && n <= len(m.issues) {
+	if n >= 1 && n <= len(m.issues) && m.issues[n-1].Deleted {
+		status, out = http.StatusGone, map[string]any{"message": "This issue was deleted"}
+	} else if n >= 1 && n <= len(m.issues) {
 		status, out = f(m, m.issues[n-1])
 	}
 	h.mu.Unlock()
@@ -478,4 +481,21 @@ func (h *Hub) AddComment(name string, n int, author, body string) {
 	h.nextComment++
 	m.comments = append(m.comments, &Comment{ID: h.nextComment, Number: n, Author: author, Body: body, Created: t, Updated: t})
 	m.issues[n-1].Updated = t
+}
+
+// DeleteIssue deletes issue n and its comments on GitHub's side, as an admin can.
+func (h *Hub) DeleteIssue(name string, n int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	m := h.meta(name)
+	m.issues[n-1].Deleted = true
+	m.comments = slices.DeleteFunc(m.comments, func(c *Comment) bool { return c.Number == n })
+}
+
+// DeleteComment deletes a comment on GitHub's side.
+func (h *Hub) DeleteComment(name string, id int64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	m := h.meta(name)
+	m.comments = slices.DeleteFunc(m.comments, func(c *Comment) bool { return c.ID == id })
 }

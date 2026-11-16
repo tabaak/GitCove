@@ -2,11 +2,13 @@
 //
 // Fetches write only GitHub's copy of the refs, under refs/gitcove/github/. The refs served to
 // developers (refs/heads, refs/tags, refs/pull) are then moved to match in one atomic update,
-// except branches with unreplayed pushes, which stay where developers left them.
+// except branches with unreplayed pushes, which stay where developers left them, and restored
+// branches. A served ref that would lose commits is first saved under refs/gitcove/history/.
 package gitstore
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -17,6 +19,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -27,14 +30,23 @@ const githubNS = "refs/gitcove/github/"
 // GitHubHeads is where GitHub's copy of the branches lives.
 const GitHubHeads = githubNS + "heads/"
 
+// historyNS holds old tips, as refs/gitcove/history/<stamp>/<ref without refs/>.
+const historyNS = "refs/gitcove/history/"
+
+const historyStamp = "20060102T150405.000Z" // milliseconds: two syncs within one second can both save a branch
+
+// RestoredPrefix starts the name of every branch `cove restore` makes. They never follow GitHub.
+const RestoredPrefix = "gitcove/restored-"
+
 // served lists the namespaces developers see, each mirrored from githubNS+<namespace without refs/>.
 var served = []string{"refs/heads/", "refs/tags/", "refs/pull/"}
 
 type Store struct {
-	Root    string // directory holding <github id>.git
-	GitURL  string // GitHub's Git base URL, e.g. https://github.com
-	Git     string // path to the git binary
-	HookBin string // the cove binary, run as "cove hook pre-receive"
+	Root    string        // directory holding <github id>.git
+	GitURL  string        // GitHub's Git base URL, e.g. https://github.com
+	Git     string        // path to the git binary
+	HookBin string        // the cove binary, run as "cove hook pre-receive"
+	Keep    time.Duration // how long history refs are kept
 
 	locks sync.Map // github id -> *sync.Mutex, so a sync and a replay don't fetch one repo at once
 }
@@ -53,7 +65,7 @@ func New(root, gitURL string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Store{Root: root, GitURL: strings.TrimSuffix(gitURL, "/"), Git: git, HookBin: bin}
+	s := &Store{Root: root, GitURL: strings.TrimSuffix(gitURL, "/"), Git: git, HookBin: bin, Keep: 90 * 24 * time.Hour}
 	if err := os.MkdirAll(s.hooksDir(), 0o700); err != nil {
 		return nil, err
 	}
@@ -112,7 +124,7 @@ func (s *Store) Fetch(ctx context.Context, githubID int64, owner, name, defaultB
 		}
 	}
 	url := fmt.Sprintf("%s/%s/%s.git", s.GitURL, owner, name)
-	args := []string{"fetch", "--quiet", "--prune", "--no-tags", "--atomic", url}
+	args := []string{"fetch", "--quiet", "--prune", "--no-tags", "--atomic", "--no-auto-gc", url}
 	for _, ns := range served {
 		args = append(args, "+"+ns+"*:"+githubNS+strings.TrimPrefix(ns, "refs/")+"*")
 	}
@@ -130,8 +142,9 @@ func (s *Store) Fetch(ctx context.Context, githubID int64, owner, name, defaultB
 }
 
 // updateServed points every served ref at GitHub's copy and deletes served refs GitHub no longer has,
-// except held branches. Each update names the value it read, so a push landing meanwhile makes the
-// whole update fail (and the next sync retry) instead of being overwritten.
+// except held and restored branches. Each update names the value it read, so a push landing meanwhile
+// makes the whole update fail (and the next sync retry) instead of being overwritten. In the same
+// atomic update, a tip that would be lost is saved as a history ref, and expired history is removed.
 func (s *Store) updateServed(ctx context.Context, dir string, held func() (map[string]bool, error)) error {
 	refs, err := s.Refs(ctx, dir)
 	if err != nil {
@@ -143,22 +156,44 @@ func (s *Store) updateServed(ctx context.Context, dir string, held func() (map[s
 	if err != nil {
 		return err
 	}
+	follows := func(ref string) bool {
+		b, ok := strings.CutPrefix(ref, "refs/heads/")
+		return !ok || !keep[b] && !strings.HasPrefix(b, RestoredPrefix)
+	}
+	now := time.Now().UTC()
+	stamp := historyNS + now.Format(historyStamp) + "/"
 	var cmds bytes.Buffer
+	// save records old's tip before ref moves to sha ("" when deleted), unless sha still contains it.
+	// refs/pull/N/merge is skipped: GitHub rebuilds it whenever the base moves.
+	save := func(ref, old, sha string) {
+		if old == "" || strings.HasPrefix(ref, "refs/pull/") && strings.HasSuffix(ref, "/merge") {
+			return
+		}
+		if sha != "" {
+			if kept, err := isAncestor(ctx, s, dir, old, sha); err == nil && kept {
+				return
+			} // on an error, e.g. a tag of a tree, save to be safe
+		}
+		fmt.Fprintf(&cmds, "create %s%s %s\n", stamp, strings.TrimPrefix(ref, "refs/"), old)
+	}
 	for ref, sha := range refs {
-		if b, ok := strings.CutPrefix(ref, "refs/heads/"); ok && keep[b] {
+		if h, ok := strings.CutPrefix(ref, historyNS); ok {
+			at, _, _ := strings.Cut(h, "/")
+			if t, err := time.Parse(historyStamp, at); err == nil && now.Sub(t) > s.Keep {
+				fmt.Fprintf(&cmds, "delete %s %s\n", ref, sha)
+			}
 			continue
 		}
 		if gh, ok := strings.CutPrefix(ref, githubNS); ok {
-			if b, ok := strings.CutPrefix(gh, "heads/"); ok && keep[b] {
-				continue
-			}
-			if want := "refs/" + gh; refs[want] != sha {
+			if want := "refs/" + gh; follows(want) && refs[want] != sha {
 				fmt.Fprintf(&cmds, "update %s %s %s\n", want, sha, orZero(refs[want]))
+				save(want, refs[want], sha)
 			}
 			continue
 		}
-		if _, ok := refs[githubNS+strings.TrimPrefix(ref, "refs/")]; !ok && isServed(ref) {
+		if _, ok := refs[githubNS+strings.TrimPrefix(ref, "refs/")]; !ok && isServed(ref) && follows(ref) {
 			fmt.Fprintf(&cmds, "delete %s %s\n", ref, sha)
+			save(ref, sha, "")
 		}
 	}
 	if cmds.Len() == 0 {
@@ -239,6 +274,7 @@ func (s *Store) Handler(githubID int64, path string, hookEnv ...string) http.Han
 			"GIT_HTTP_EXPORT_ALL=1",
 			"COVE_HOOK_BIN=" + s.HookBin,
 			"GIT_CONFIG_COUNT=4",
+			// Hidden refs aren't advertised, and with protocol v0 a client can't ask for what isn't reachable from an advertised one.
 			"GIT_CONFIG_KEY_0=uploadpack.hideRefs", "GIT_CONFIG_VALUE_0=refs/gitcove/",
 			"GIT_CONFIG_KEY_1=receive.hideRefs", "GIT_CONFIG_VALUE_1=refs/gitcove/",
 			"GIT_CONFIG_KEY_2=http.receivepack", "GIT_CONFIG_VALUE_2=true",
@@ -248,6 +284,44 @@ func (s *Store) Handler(githubID int64, path string, hookEnv ...string) http.Han
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r2 := r.Clone(r.Context())
 		r2.URL.Path = fmt.Sprintf("/%d.git%s", githubID, path) // http-backend sees only the ID path
+		// Protocol v2 serves any object in the repo by ID, hidden or unreachable, such as a
+		// force-pushed secret kept in history. Without this header Git falls back to v0.
+		r2.Header.Del("Git-Protocol")
 		h.ServeHTTP(w, r2)
 	})
+}
+
+// Saved is a branch tip a sync saved before GitHub moved it backwards, rewrote it or deleted it.
+type Saved struct{ At, Branch, Commit string } // At is the history stamp, e.g. 20261115T101500.123Z
+
+// History lists the saved branch tips of githubID's repo, oldest first.
+func (s *Store) History(ctx context.Context, githubID int64) ([]Saved, error) {
+	refs, err := s.Refs(ctx, s.Dir(githubID))
+	if err != nil {
+		return nil, err
+	}
+	var out []Saved
+	for ref, sha := range refs {
+		at, rest, _ := strings.Cut(strings.TrimPrefix(ref, historyNS), "/")
+		if b, ok := strings.CutPrefix(rest, "heads/"); ok && strings.HasPrefix(ref, historyNS) {
+			out = append(out, Saved{at, b, sha})
+		}
+	}
+	slices.SortFunc(out, func(a, b Saved) int { return cmp.Or(cmp.Compare(a.At, b.At), cmp.Compare(a.Branch, b.Branch)) })
+	return out, nil
+}
+
+// Restore makes the new branch gitcove/restored-<branch>-<at> at the tip of branch saved at at,
+// and returns its name and commit. It never moves an existing branch, and syncs leave it alone.
+func (s *Store) Restore(ctx context.Context, githubID int64, branch, at string) (name, sha string, err error) {
+	dir := s.Dir(githubID)
+	out, err := s.run(ctx, dir, nil, "rev-parse", "-q", "--verify", historyNS+at+"/heads/"+branch)
+	if exitCode(err) == 1 {
+		return "", "", fmt.Errorf("no saved tip of %s at %s", branch, at)
+	} else if err != nil {
+		return "", "", err
+	}
+	name, sha = RestoredPrefix+branch+"-"+at, strings.TrimSpace(out)
+	_, err = s.run(ctx, dir, nil, "update-ref", "refs/heads/"+name, sha, zeroID)
+	return name, sha, err
 }

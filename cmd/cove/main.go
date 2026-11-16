@@ -52,6 +52,9 @@ const usage = `usage: cove <command>
                                            extra protected branches; deploy branches reach GitHub only through a PR
   repo pr-only OWNER/REPO on|off           send default and deploy branch work as PRs (default on)
   repo approvals OWNER/REPO N              approvals a PR needs before it can be merged on GitCove (default 1)
+  restore OWNER/REPO [BRANCH]              list branch tips saved before GitHub rewrote or deleted them
+  restore [-push] OWNER/REPO BRANCH STAMP  bring one back as the new branch gitcove/restored-BRANCH-STAMP;
+                                           -push also creates it on GitHub (read-write App only)
 
   client setup -url URL -org ORG [-agent=false] [-notify]
                                            on a developer machine: save GitCove's address and token (COVE_TOKEN or stdin),
@@ -112,6 +115,8 @@ func run(args []string) error {
 		return branchCmd(cfg, args[1:])
 	case "repo":
 		return repoCmd(cfg, args[1:])
+	case "restore":
+		return restoreCmd(cfg, args[1:])
 	}
 	fmt.Fprint(os.Stderr, usage)
 	return fmt.Errorf("unknown command %q", args[0])
@@ -123,9 +128,11 @@ type config struct {
 	ClientID, ClientSecretFile        string
 	UserKeyFile                       string
 	AlertWebhook                      string
+	WebhookSecretFile                 string
 	SyncEvery, HealthEvery, FetchTime time.Duration
 	ReplayEvery                       time.Duration
-	SSH                               string // GitHub's SSH server for the health probe; "" skips it
+	SSH                               string        // GitHub's SSH server for the health probe; "" skips it
+	Retention                         time.Duration // how long history refs and tombstones are kept
 }
 
 func loadConfig() (config, error) {
@@ -144,13 +151,18 @@ func loadConfig() (config, error) {
 		ClientSecretFile: os.Getenv("COVE_APP_CLIENT_SECRET_FILE"),
 		UserKeyFile:      os.Getenv("COVE_USER_KEY_FILE"),
 
-		AlertWebhook: os.Getenv("COVE_ALERT_WEBHOOK"),
-		SSH:          env("COVE_GITHUB_SSH", "github.com:22"),
+		AlertWebhook:      os.Getenv("COVE_ALERT_WEBHOOK"),
+		WebhookSecretFile: os.Getenv("COVE_WEBHOOK_SECRET_FILE"),
+		SSH:               env("COVE_GITHUB_SSH", "github.com:22"),
 	}
 	if c.SSH == "off" {
 		c.SSH = ""
 	}
-	var err error
+	days, err := strconv.Atoi(env("COVE_RETENTION_DAYS", "90"))
+	if err != nil || days < 1 {
+		return c, errors.New("COVE_RETENTION_DAYS: want a whole number of days, 1 or more")
+	}
+	c.Retention = time.Duration(days) * 24 * time.Hour
 	for _, d := range []struct {
 		dst  *time.Duration
 		name string
@@ -213,6 +225,7 @@ func build(cfg config) (*app, error) {
 		st.Close()
 		return nil, err
 	}
+	gs.Keep = cfg.Retention
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	gh := &ghclient.App{API: cfg.API, AppID: cfg.AppID, Key: key, Org: cfg.Org, HTTP: &http.Client{Timeout: time.Minute}, Web: cfg.GitURL}
 	users, err := userTokens(cfg, gh, st, log)
@@ -220,7 +233,7 @@ func build(cfg config) (*app, error) {
 		st.Close()
 		return nil, err
 	}
-	m := &mirror.Mirror{GH: gh, Store: st, Git: gs, FetchTimeout: cfg.FetchTime, Log: log}
+	m := &mirror.Mirror{GH: gh, Store: st, Git: gs, FetchTimeout: cfg.FetchTime, Log: log, Wake: make(chan struct{}, 1)}
 	return &app{
 		store:  st,
 		git:    gs,
@@ -298,7 +311,16 @@ func serve(cfg config) error {
 	go a.health.Run(ctx, cfg.HealthEvery, 15*time.Second)
 
 	// No write timeout: clones of large repos can take a long time.
-	ws := &web.Server{Store: a.store, Git: a.git, Health: a.health, Users: a.users, Log: a.log, StaleAfter: 3 * cfg.SyncEvery}
+	ws := &web.Server{Store: a.store, Git: a.git, Health: a.health, Users: a.users, Log: a.log, StaleAfter: 3 * cfg.SyncEvery, Wake: a.mirror.Wake}
+	if cfg.WebhookSecretFile != "" {
+		secret, err := os.ReadFile(cfg.WebhookSecretFile)
+		if err != nil {
+			return err
+		}
+		if ws.WebhookSecret = bytes.TrimSpace(secret); len(ws.WebhookSecret) == 0 {
+			return errors.New("COVE_WEBHOOK_SECRET_FILE is empty")
+		}
+	}
 	srv := &http.Server{Addr: cfg.Listen, Handler: ws.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()

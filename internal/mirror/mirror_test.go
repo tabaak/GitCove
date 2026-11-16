@@ -57,9 +57,10 @@ func setup(t *testing.T, seed uint64, repos ...string) *env {
 	log := slog.New(slog.DiscardHandler)
 	gh := &ghclient.App{API: hub.URL, AppID: hub.AppID, Key: hub.Key, Org: hub.Org, HTTP: &http.Client{Timeout: 5 * time.Second}}
 	hc := &health.Checker{GH: gh, HTTP: &http.Client{Timeout: 2 * time.Second}, GitURL: hub.URL, Store: st, Log: log}
-	cove := httptest.NewServer((&web.Server{Store: st, Git: gs, Health: hc, Log: log}).Handler())
+	m := &Mirror{GH: gh, Store: st, Git: gs, FetchTimeout: 30 * time.Second, Log: log, Wake: make(chan struct{}, 1)}
+	cove := httptest.NewServer((&web.Server{Store: st, Git: gs, Health: hc, Log: log, WebhookSecret: []byte(webhookSecret), Wake: m.Wake}).Handler())
 	t.Cleanup(cove.Close)
-	return &env{hub, gh, &Mirror{GH: gh, Store: st, Git: gs, FetchTimeout: 30 * time.Second, Log: log}, st, hc, cove}
+	return &env{hub, gh, m, st, hc, cove}
 }
 
 // served returns the refs GitCove serves for name, in the namespaces fakehub has.
@@ -242,6 +243,7 @@ func campaign(t *testing.T, seed uint64) {
 	e.gh.HTTP.Timeout, e.m.FetchTimeout = 500*time.Millisecond, 3*time.Second
 
 	failed := 0
+	tips := map[string]bool{} // every tip GitCove has served
 	for round := range 6 {
 		f := fakehub.Faults{
 			APIDown:     rng.Float64() < 0.1,
@@ -251,6 +253,13 @@ func campaign(t *testing.T, seed uint64) {
 			CutRate:     rng.Float64() * 0.3,
 		}
 		e.hub.SetFaults(f)
+		for _, r := range repos {
+			if _, err := os.Stat(e.m.Git.Dir(fakehub.RepoID(r))); err == nil {
+				for _, sha := range e.served(t, r) {
+					tips[r+" "+sha] = true
+				}
+			}
+		}
 		mutate(t, e.hub, rng, repos[rng.IntN(len(repos))])
 		cycleErr := e.m.Cycle(ctx)
 		if cycleErr != nil {
@@ -275,6 +284,13 @@ func campaign(t *testing.T, seed uint64) {
 	for _, r := range repos {
 		if got, want := e.served(t, r), e.hub.Refs(t, r); !maps.Equal(got, want) {
 			t.Fatalf("%s served refs differ from GitHub:\n got %v\nwant %v", r, got, want)
+		}
+	}
+	// Force-pushes and deletions on GitHub lose nothing GitCove served: it's in a branch or in history.
+	for tip := range tips {
+		r, sha, _ := strings.Cut(tip, " ")
+		if out, _ := git(t, e.m.Git.Dir(fakehub.RepoID(r)), "for-each-ref", "--count=1", "--contains", sha, "refs/heads", "refs/tags", "refs/pull", "refs/gitcove/history"); out == "" {
+			t.Fatalf("%s: tip %s served earlier is in no served or history ref", r, sha)
 		}
 	}
 }
