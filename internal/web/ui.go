@@ -58,6 +58,7 @@ type page struct {
 	Stale    bool     // the copy may be out of date: old, or its last sync failed
 	Down     []string // GitHub's paths that failed the last health check
 	OnTheWay int      // changes still to replay to GitHub
+	Tab      string   // the template being rendered, so the header can mark its tab
 	Data     any
 }
 
@@ -151,6 +152,7 @@ func (s *Server) age(r store.Repo) (string, bool) {
 
 func (s *Server) render(w http.ResponseWriter, name string, p *page) error {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	p.Tab = name
 	return tmpl.ExecuteTemplate(w, name, p)
 }
 

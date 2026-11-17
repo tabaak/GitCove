@@ -1,50 +1,207 @@
+{{/* Icons are Octicons (MIT, GitHub Inc.); see THIRD_PARTY_NOTICES.md. */}}
+{{define "i-issue"}}<svg class="octicon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/></svg>{{end}}
+{{define "i-issue-closed"}}<svg class="octicon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M11.28 6.78a.75.75 0 0 0-1.06-1.06L7.25 8.69 5.78 7.22a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l3.5-3.5Z"/><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-1.5 0a6.5 6.5 0 1 0-13 0 6.5 6.5 0 0 0 13 0Z"/></svg>{{end}}
+{{define "i-pr"}}<svg class="octicon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"/></svg>{{end}}
+{{define "i-merge"}}<svg class="octicon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0 0 .005V3.25Z"/></svg>{{end}}
+{{define "i-branch"}}<svg class="octicon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z"/></svg>{{end}}
+{{define "i-repo"}}<svg class="octicon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8ZM5 12.25a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25v3.25a.25.25 0 0 1-.4.2l-1.45-1.087a.25.25 0 0 0-.3 0L5.4 15.7a.25.25 0 0 1-.4-.2Z"/></svg>{{end}}
+{{define "i-person"}}<svg class="octicon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M10.561 8.073a6.005 6.005 0 0 1 3.432 5.142.75.75 0 1 1-1.498.07 4.5 4.5 0 0 0-8.99 0 .75.75 0 0 1-1.498-.07 6.004 6.004 0 0 1 3.431-5.142 3.999 3.999 0 1 1 5.123 0ZM10.5 5a2.5 2.5 0 1 0-5 0 2.5 2.5 0 0 0 5 0Z"/></svg>{{end}}
+{{define "i-comment"}}<svg class="octicon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A1.458 1.458 0 0 1 4 13.543V12H2.75A1.75 1.75 0 0 1 1 10.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h4.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>{{end}}
+{{define "i-file-diff"}}<svg class="octicon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M1 1.75C1 .784 1.784 0 2.75 0h7.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16H2.75A1.75 1.75 0 0 1 1 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25V4.664a.25.25 0 0 0-.073-.177l-2.914-2.914a.25.25 0 0 0-.177-.073ZM8 3.25a.75.75 0 0 1 .75.75v1.5h1.5a.75.75 0 0 1 0 1.5h-1.5v1.5a.75.75 0 0 1-1.5 0V7h-1.5a.75.75 0 0 1 0-1.5h1.5V4A.75.75 0 0 1 8 3.25Zm-3 8a.75.75 0 0 1 .75-.75h4.5a.75.75 0 0 1 0 1.5h-4.5a.75.75 0 0 1-.75-.75Z"/></svg>{{end}}
+{{define "i-info"}}<svg class="octicon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/></svg>{{end}}
+{{define "i-alert"}}<svg class="octicon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"/></svg>{{end}}
+
 {{define "head"}}<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GitCove</title>
+<title>{{if .Repo.Name}}{{.Repo.FullName}} · {{end}}GitCove</title>
 <style>
-  :root { --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --bg: #fff; --warn: #fff8c5; --info: #ddf4ff; --accent: #0969da; --subtle: #f6f8fa; }
-  @media (prefers-color-scheme: dark) { :root { --fg: #e6edf3; --muted: #9198a1; --line: #3d444d; --bg: #0d1117; --warn: #3b2e00; --info: #0c2d4a; --accent: #4493f8; --subtle: #151b23; } }
-  body { font: 16px/1.6 system-ui, sans-serif; color: var(--fg); background: var(--bg); margin: 0 auto; max-width: 860px; padding: 0 16px 48px; }
-  header { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--line); }
-  header form { margin: 0; }
+  :root {
+    --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --bg: #fff; --subtle: #f6f8fa; --header: #f6f8fa; --accent: #0969da;
+    --accent-subtle: #ddf4ff; --accent-line: #54aeff66; --warn: #fff8c5; --warn-line: #d4a72c66; --warn-fg: #9a6700;
+    --open: #1a7f37; --open-bg: #1f883d; --done: #8250df; --closed: #d1242f; --closed-bg: #cf222e;
+    --btn: #f6f8fa; --btn-hover: #eff2f5; --btn-line: #d1d9e0; --primary: #1f883d; --primary-hover: #1c8139; --primary-line: #1f232826;
+    --label: #818b981f; --hover: #818b981a; --nav-line: #fd8c73;
+    --add: #dafbe1; --add-n: #aceebb; --del: #ffebe9; --del-n: #ffcecb; --hunk: #ddf4ff; --hunk-n: #b6e3ff;
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    --fg: #d1d7e0; --muted: #9198a1; --line: #3d444d; --bg: #212830; --subtle: #262c36; --header: #151b23; --accent: #478be6;
+    --accent-subtle: #4184e41a; --accent-line: #4184e466; --warn: #ae7c1426; --warn-line: #ae7c1466; --warn-fg: #c69026;
+    --open: #57ab5a; --open-bg: #347d39; --done: #986ee2; --closed: #e5534b; --closed-bg: #c93c37;
+    --btn: #2a313c; --btn-hover: #2f3742; --btn-line: #3d444d; --primary: #347d39; --primary-hover: #3b8640; --primary-line: #d1d7e01a;
+    --label: #656c7633; --hover: #656c7633;
+    --add: #46954a26; --add-n: #57ab5a4d; --del: #e5534b1a; --del-n: #e5534b66; --hunk: #4184e41a; --hunk-n: #4184e466;
+  } }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; color: var(--fg); background: var(--bg); }
   a { color: var(--accent); text-decoration: none; }
-  .banner { margin: 12px 0; padding: 8px 12px; border-radius: 6px; background: var(--info); }
-  .banner.failover, .banner.degraded, .banner.degraded-paused, .banner.warn { background: var(--warn); }
-  .muted { color: var(--muted); font-size: 14px; }
-  h1 .muted { font-size: 0.7em; font-weight: normal; }
-  .badge { font-size: 13px; border: 1px solid var(--line); border-radius: 999px; padding: 1px 10px; margin-left: 4px; color: var(--muted); white-space: nowrap; }
-  table { width: 100%; border-collapse: collapse; }
-  td { padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  td:first-child, td:last-child { width: 1%; white-space: nowrap; }
-  .text { white-space: pre-wrap; overflow-wrap: anywhere; }
-  .post { border: 1px solid var(--line); border-radius: 6px; margin: 12px 0; }
-  .post > div { padding: 10px 16px; }
-  .post > .muted { border-bottom: 1px solid var(--line); background: var(--subtle); border-radius: 6px 6px 0 0; }
-  input[type=text], textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 6px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
-  textarea { min-height: 120px; }
-  button, a.button { font: inherit; padding: 4px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; }
-  details { margin: 12px 0; }
-  .bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; margin: 12px 0; }
-  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+  a:hover { text-decoration: underline; }
+  code, .mono { font: 12px/1.5 ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; }
+  p code { padding: .2em .4em; background: var(--label); border-radius: 6px; }
+  h1, h2, h3 { margin: 0; font-weight: 600; }
+  .octicon { fill: currentColor; vertical-align: text-bottom; flex: none; }
+  .muted { color: var(--muted); }
+  .small { font-size: 12px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .container { max-width: 1280px; margin: 0 auto; padding: 0 32px 48px; }
+
+  /* header */
+  .app-header { background: var(--header); border-bottom: 1px solid var(--line); padding: 16px 32px 0; }
+  .app-header .top { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding-bottom: 16px; }
+  .crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 14px; }
+  .crumbs a { color: var(--fg); padding: 2px 6px; border-radius: 6px; }
+  .crumbs a:hover { background: var(--hover); text-decoration: none; }
+  .crumbs .home { font-weight: 600; font-size: 16px; display: inline-flex; gap: 8px; align-items: center; }
+  .crumbs .sep { color: var(--muted); }
+  .user { display: flex; gap: 8px; align-items: center; }
+  .user form { margin: 0; }
+  .tabs { display: flex; gap: 8px; overflow-x: auto; }
+  .tabs a { position: relative; display: inline-flex; gap: 8px; align-items: center; padding: 0 8px; margin-bottom: 8px; line-height: 30px; border-radius: 6px; color: var(--fg); white-space: nowrap; }
+  .tabs a .octicon { color: var(--muted); }
+  .tabs a:hover { background: var(--hover); text-decoration: none; }
+  .tabs a[aria-current] { font-weight: 600; }
+  .tabs a[aria-current]::after { content: ""; position: absolute; left: 0; right: 0; bottom: -9px; height: 2px; border-radius: 6px; background: var(--nav-line); }
+
+  /* flash */
+  .flash { display: flex; gap: 8px; margin: 16px 0; padding: 16px; border: 1px solid var(--accent-line); border-radius: 6px; background: var(--accent-subtle); }
+  .flash > .octicon { margin-top: 2px; color: var(--accent); }
+  .flash.failover, .flash.degraded, .flash.degraded-paused, .flash.warn { background: var(--warn); border-color: var(--warn-line); }
+  .flash.failover > .octicon, .flash.degraded > .octicon, .flash.degraded-paused > .octicon, .flash.warn > .octicon { color: var(--warn-fg); }
+
+  /* controls */
+  button, .btn { display: inline-flex; gap: 4px; align-items: center; justify-content: center; padding: 5px 16px; font: inherit; font-weight: 500; line-height: 20px; color: var(--fg); background: var(--btn); border: 1px solid var(--btn-line); border-radius: 6px; cursor: pointer; white-space: nowrap; }
+  button:hover, .btn:hover { background: var(--btn-hover); text-decoration: none; }
+  .btn-primary { color: #fff; background: var(--primary); border-color: var(--primary-line); }
+  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-sm { padding: 3px 12px; font-size: 12px; }
+  summary.btn { list-style: none; }
+  summary.btn::-webkit-details-marker { display: none; }
+  input[type=text], textarea { width: 100%; padding: 5px 12px; font: inherit; line-height: 20px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+  input[type=text]:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+  textarea { min-height: 120px; resize: vertical; }
+  label.field { display: block; font-weight: 600; margin-bottom: 16px; }
+  label.field input, label.field textarea { margin-top: 6px; font-weight: 400; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .actions form { margin: 0; }
-  fieldset { border: 1px solid var(--line); border-radius: 6px; margin: 12px 0; }
-  .diff { font: 13px/1.5 ui-monospace, monospace; border: 1px solid var(--line); border-radius: 6px; margin: 12px 0; overflow-x: auto; }
-  .diff td { padding: 0 8px; border: 0; white-space: pre; width: auto; }
-  .diff td.n { color: var(--muted); text-align: right; user-select: none; width: 1%; }
-  .diff tr.add { background: #2da44e33; } .diff tr.del { background: #cf222e33; } .diff tr.hunk { background: var(--subtle); color: var(--muted); }
-  .diff details { margin: 0; } .diff summary { cursor: pointer; color: var(--accent); } .diff textarea { min-height: 60px; width: 60ch; }
+  .end { justify-content: flex-end; }
+
+  /* labels and states */
+  .label, .badge { display: inline-block; padding: 0 7px; font-size: 12px; font-weight: 500; line-height: 18px; border: 1px solid transparent; border-radius: 2em; white-space: nowrap; vertical-align: middle; }
+  .label { background: var(--label); color: var(--fg); }
+  .badge { border-color: var(--line); color: var(--muted); }
+  .open { color: var(--open); } .done { color: var(--done); } .closed { color: var(--closed); }
+  .state { display: inline-flex; gap: 4px; align-items: center; padding: 5px 12px; font-weight: 500; line-height: 20px; color: #fff; border-radius: 2em; text-transform: capitalize; }
+  .state.open { background: var(--open-bg); color: #fff; } .state.done { background: var(--done); color: #fff; } .state.closed { background: var(--closed-bg); color: #fff; }
+  .branch { display: inline-block; padding: 0 6px; color: var(--accent); background: var(--accent-subtle); border-radius: 6px; }
+
+  /* boxes and lists */
+  .box { border: 1px solid var(--line); border-radius: 6px; margin: 16px 0; }
+  .box-header { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; padding: 16px; background: var(--subtle); border-bottom: 1px solid var(--line); border-radius: 6px 6px 0 0; }
+  .box-header a { color: var(--muted); display: inline-flex; gap: 4px; align-items: center; }
+  .box-header a:hover { color: var(--fg); text-decoration: none; }
+  .box-header a[aria-current] { color: var(--fg); font-weight: 600; }
+  .box-row { display: flex; gap: 8px; align-items: flex-start; padding: 8px 16px; }
+  .box-row + .box-row { border-top: 1px solid var(--line); }
+  .box-row:hover { background: var(--subtle); }
+  .box-row > .octicon { margin-top: 3px; }
+  .box-row .grow { flex: 1; min-width: 0; }
+  .row-title { font-size: 16px; font-weight: 600; color: var(--fg); overflow-wrap: anywhere; }
+  .row-title:hover { color: var(--accent); text-decoration: none; }
+  .blank { padding: 32px; text-align: center; color: var(--muted); }
+  .subnav { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin: 24px 0 16px; }
+
+  /* issue and PR pages */
+  .gh-header { padding: 24px 0 16px; margin-bottom: 16px; }
+  .gh-header.ruled { border-bottom: 1px solid var(--line); }
+  .gh-header h1 { font-size: 32px; font-weight: 400; line-height: 1.25; overflow-wrap: anywhere; }
+  .gh-header h1 .muted { font-weight: 300; }
+  .gh-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; color: var(--muted); }
+  .tabnav { display: flex; border-bottom: 1px solid var(--line); margin-bottom: 16px; overflow-x: auto; }
+  .tabnav a { display: inline-flex; gap: 8px; align-items: center; padding: 8px 16px; margin-bottom: -1px; color: var(--muted); border: 1px solid transparent; border-radius: 6px 6px 0 0; white-space: nowrap; }
+  .tabnav a:hover { color: var(--fg); text-decoration: none; }
+  .tabnav a[aria-current] { color: var(--fg); background: var(--bg); border-color: var(--line); border-bottom-color: var(--bg); }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 256px; gap: 24px; }
+  .sidebar-item { padding-bottom: 16px; margin-bottom: 16px; border-bottom: 1px solid var(--line); font-size: 12px; }
+  .sidebar-item h2 { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .sidebar-item .actions { gap: 4px; }
+  .timeline { position: relative; }
+  .timeline::before { content: ""; position: absolute; top: 0; bottom: 0; left: 72px; width: 2px; background: var(--line); }
+  .tl-item { position: relative; display: flex; gap: 16px; margin-bottom: 16px; }
+  .tl-indent { position: relative; margin: 0 0 16px 56px; padding: 8px 12px; background: var(--bg); }
+  .avatar { position: relative; flex: none; display: grid; place-items: center; width: 40px; height: 40px; color: var(--muted); background: var(--subtle); border: 1px solid var(--line); border-radius: 50%; }
+  .avatar.sm { width: 20px; height: 20px; border: 0; }
+  .avatar.sm .octicon { width: 12px; height: 12px; }
+  .avatar.ok { color: #fff; background: var(--open-bg); border-color: transparent; }
+  .comment { position: relative; flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+  .comment::before, .comment::after { content: ""; position: absolute; right: 100%; border: solid transparent; }
+  .comment::before { top: 11px; border-width: 8px; border-right-color: var(--line); }
+  .comment::after { top: 12px; border-width: 7px; border-right-color: var(--subtle); }
+  .comment-head { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; padding: 8px 16px; color: var(--muted); background: var(--subtle); border-bottom: 1px solid var(--line); border-radius: 6px 6px 0 0; }
+  .comment-head strong { color: var(--fg); }
+  .comment-body { padding: 16px; }
+  .comment-body + .comment-body { border-top: 1px solid var(--line); }
+  .comment-body > p:first-child { margin-top: 0; }
+  .comment-body > :last-child { margin-bottom: 0; }
+  .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .comment-foot { padding: 0 16px 16px; }
+  details > summary { cursor: pointer; }
+  details[open] > summary.btn { margin-bottom: 8px; }
+  .new-form textarea { margin-top: 8px; }
+
+  /* diffs */
+  .file { border: 1px solid var(--line); border-radius: 6px; margin: 16px 0; }
+  .file-header { position: sticky; top: 0; z-index: 1; padding: 8px 16px; background: var(--subtle); border-bottom: 1px solid var(--line); border-radius: 6px 6px 0 0; overflow-wrap: anywhere; }
+  .file-body { overflow-x: auto; }
+  .diff { width: 100%; border-collapse: collapse; font: 12px/20px ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; }
+  .diff td { padding: 0 10px; white-space: pre; vertical-align: top; }
+  .diff td.n { width: 1%; min-width: 50px; text-align: right; color: var(--muted); user-select: none; }
+  .diff tr.add td { background: var(--add); } .diff tr.add td.n { background: var(--add-n); }
+  .diff tr.del td { background: var(--del); } .diff tr.del td.n { background: var(--del-n); }
+  .diff tr.hunk td { background: var(--hunk); color: var(--muted); } .diff tr.hunk td.n { background: var(--hunk-n); }
+  .diff details { white-space: normal; font: 12px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; }
+  .diff summary { color: var(--accent); }
+  .diff textarea { min-height: 60px; width: 60ch; max-width: 100%; margin: 4px 0 8px; }
+  .review { padding: 16px; }
+  .review label { margin-right: 16px; }
+
+  /* sign in */
+  .auth { max-width: 340px; margin: 40px auto; }
+  .auth h1 { font-size: 24px; font-weight: 300; text-align: center; margin-bottom: 16px; }
+  .auth .box { padding: 16px; background: var(--subtle); }
+  .auth button { width: 100%; }
+  .auth .note { padding: 16px; text-align: center; }
+
+  @media (max-width: 768px) {
+    .container { padding: 0 16px 32px; }
+    .app-header { padding: 16px 16px 0; }
+    .layout { grid-template-columns: minmax(0, 1fr); }
+    .tl-item > .avatar, .timeline::before { display: none; }
+    .comment::before, .comment::after { display: none; }
+    .tl-indent { margin-left: 0; }
+    .gh-header h1 { font-size: 24px; }
+  }
 </style>
 </head>
 <body>
-<header>
-  <nav><a href="/"><strong>GitCove</strong></a>{{if .Repo.Name}} / <a href="/{{.Repo.FullName}}/issues">{{.Repo.FullName}}</a> · <a href="/{{.Repo.FullName}}/branches">branches</a>{{end}}</nav>
-  {{if .User.Name}}<div class="actions"><span class="muted">{{.User.Name}}</span><form method="post" action="/logout"><button>Sign out</button></form></div>{{end}}
+<header class="app-header">
+  <div class="top">
+    <nav class="crumbs" aria-label="Breadcrumb"><a class="home" href="/">GitCove</a>{{if .Repo.Name}}<span class="sep">/</span><a href="/{{.Repo.FullName}}/issues">{{.Repo.Owner}}</a><span class="sep">/</span><a href="/{{.Repo.FullName}}/issues"><strong>{{.Repo.Name}}</strong></a>{{end}}</nav>
+    {{if .User.Name}}<div class="user"><span class="avatar sm">{{template "i-person"}}</span><span>{{.User.Name}}</span><form method="post" action="/logout"><button class="btn-sm">Sign out</button></form></div>{{end}}
+  </div>
+  {{if .Repo.Name}}{{$t := .Tab}}
+  <nav class="tabs" aria-label="Repository">
+    <a href="/{{.Repo.FullName}}/issues"{{if or (eq $t "issues") (eq $t "issue") (eq $t "new") (eq $t "files")}} aria-current="page"{{end}}>{{template "i-issue"}} Issues</a>
+    <a href="/{{.Repo.FullName}}/branches"{{if or (eq $t "branches") (eq $t "compare")}} aria-current="page"{{end}}>{{template "i-branch"}} Branches</a>
+  </nav>
+  {{end}}
 </header>
+<main class="container">
 {{if .User.Name}}
-<div class="banner {{.Mode}}{{if or .Stale .Down}} warn{{end}}">
+<div class="flash {{.Mode}}{{if or .Stale .Down}} warn{{end}}">
+  {{if or .Stale .Down (eq (print .Mode) "failover" "degraded" "degraded-paused")}}{{template "i-alert"}}{{else}}{{template "i-info"}}{{end}}
+  <div>
   {{if eq (print .Mode) "failover"}}GitHub is down. What you add here is queued and replayed to GitHub when it's back.
   {{else if eq (print .Mode) "degraded"}}GitHub is slow or failing. What you add here is queued and replayed to GitHub in the background.
   {{else if eq (print .Mode) "degraded-paused"}}GitHub is slow or failing. What you add here is queued; an admin has paused replaying it to GitHub.
@@ -54,183 +211,239 @@
   {{if .OnTheWay}}<span class="muted"> {{.OnTheWay}} {{if eq .OnTheWay 1}}change{{else}}changes{{end}} still on the way to GitHub.</span>{{end}}
   {{if .Age}}<span class="muted"> {{.Age}}.</span>{{end}}
   {{if .Stale}}<strong> This copy may be out of date{{if .Repo.SyncError}}: its last sync from GitHub failed{{end}}.</strong>{{end}}
+  </div>
 </div>
 {{end}}
 {{end}}
 
-{{define "foot"}}</body></html>{{end}}
+{{define "foot"}}</main></body></html>{{end}}
 
 {{define "login"}}{{template "head" .}}
-<h1>Sign in</h1>
-<form method="post" action="/login">
-  <p><label>GitCove token<br><input type="text" name="token" autocomplete="off" required></label></p>
-  <button>Sign in</button>
+<div class="auth">
+<h1>Sign in to GitCove</h1>
+<form class="box" method="post" action="/login">
+  <label class="field">GitCove token<input type="text" name="token" autocomplete="off" required></label>
+  <button class="btn-primary">Sign in</button>
 </form>
-<p class="muted">Your admin issues tokens with <code>cove token create</code>.</p>
+<div class="box note muted">Your admin issues tokens with <code>cove token create</code>.</div>
+</div>
 {{template "foot"}}{{end}}
 
 {{define "home"}}{{template "head" .}}
-<h1>Repositories</h1>
-<ul>{{range .Data}}<li><a href="/{{.}}/issues">{{.}}</a></li>{{else}}<li class="muted">No repositories assigned to your token.</li>{{end}}</ul>
+<div class="box">
+  <div class="box-header"><h1 style="font-size:14px">Repositories</h1></div>
+  {{range .Data}}<div class="box-row"><span class="muted">{{template "i-repo"}}</span><a class="row-title" href="/{{.}}/issues">{{.}}</a></div>
+  {{else}}<div class="blank">No repositories assigned to your token.</div>{{end}}
+</div>
 {{template "foot"}}{{end}}
 
 {{define "issues"}}{{template "head" .}}
-<h1>Issues and pull requests</h1>
-<div class="bar">
-  <span>Show:
-  {{$s := .Data.State}}{{if eq $s "open"}}<strong>open</strong>{{else}}<a href="?state=open">open</a>{{end}} ·
-  {{if eq $s "closed"}}<strong>closed</strong>{{else}}<a href="?state=closed">closed</a>{{end}} ·
-  {{if eq $s "all"}}<strong>all</strong>{{else}}<a href="?state=all">all</a>{{end}}</span>
-  {{if .Writable}}<span><a class="button" href="/{{.Repo.FullName}}/issues/new">New issue</a>
-    <a class="button" href="/{{.Repo.FullName}}/branches">New pull request</a></span>{{end}}
+<h1 class="sr-only">Issues and pull requests</h1>
+{{if .Writable}}<div class="subnav end">
+  <a class="btn" href="/{{.Repo.FullName}}/branches">New pull request</a>
+  <a class="btn btn-primary" href="/{{.Repo.FullName}}/issues/new">New issue</a>
+</div>{{end}}
+<div class="box">
+  <nav class="box-header" aria-label="Show">{{$s := .Data.State}}
+    <a href="?state=open"{{if eq $s "open"}} aria-current="page"{{end}}>{{template "i-issue"}} Open</a>
+    <a href="?state=closed"{{if eq $s "closed"}} aria-current="page"{{end}}>{{template "i-issue-closed"}} Closed</a>
+    <a href="?state=all"{{if eq $s "all"}} aria-current="page"{{end}}>All</a>
+  </nav>
+  {{range .Data.Rows}}
+  <div class="box-row">
+    {{if .IsPR}}<span class="{{if eq .State "open"}}open{{else}}muted{{end}}" title="{{.State}} pull request">{{template "i-pr"}}</span>
+    {{else if eq .State "open"}}<span class="open" title="open issue">{{template "i-issue"}}</span>
+    {{else}}<span class="done" title="closed issue">{{template "i-issue-closed"}}</span>{{end}}
+    <div class="grow">
+      <a class="row-title" href="/{{$.Repo.FullName}}/issues/{{.Ref}}">{{.Title}}</a>
+      {{range .Labels}}<span class="label">{{.}}</span> {{end}}{{if .Badge}}<span class="badge">{{.Badge}}</span>{{end}}
+      <div class="muted small">{{.Num}} · {{.State}}{{if .IsPR}} pull request{{end}}</div>
+    </div>
+  </div>
+  {{else}}
+  <div class="blank">Nothing here.</div>
+  {{end}}
 </div>
-<table>
-{{range .Data.Rows}}
-  <tr>
-    <td class="muted">{{if .IsPR}}PR {{end}}{{.Num}}</td>
-    <td><a href="/{{$.Repo.FullName}}/issues/{{.Ref}}">{{.Title}}</a>
-      {{range .Labels}}<span class="badge">{{.}}</span>{{end}}{{if .Badge}}<span class="badge">{{.Badge}}</span>{{end}}</td>
-    <td class="muted">{{.State}}</td>
-  </tr>
-{{else}}
-  <tr><td class="muted">Nothing here.</td></tr>
-{{end}}
-</table>
 {{template "foot"}}{{end}}
 
 {{define "new"}}{{template "head" .}}
-<h1>New issue</h1>
+<div class="gh-header ruled"><h1>New issue</h1></div>
 <form method="post" action="/{{.Repo.FullName}}/issues">
-  <p><label>Title<br><input type="text" name="title" required maxlength="256"></label></p>
-  <p><label>Description<br><textarea name="body"></textarea></label></p>
-  {{if .Data}}<fieldset><legend>Labels</legend>{{range .Data}}<label><input type="checkbox" name="label" value="{{.}}"> {{.}}</label> {{end}}</fieldset>{{end}}
-  <p class="muted">It gets a temporary number such as L-3 until replay creates it on GitHub. Mention it elsewhere as #L-3 and replay rewrites that to the real number.</p>
-  <button>Queue issue</button>
+<div class="layout">
+  <div class="tl-item">
+    <span class="avatar">{{template "i-person"}}</span>
+    <div class="comment"><div class="comment-body new-form">
+      <label class="field">Title<input type="text" name="title" required maxlength="256"></label>
+      <label class="field">Description<textarea name="body"></textarea></label>
+      <p class="muted small">It gets a temporary number such as L-3 until replay creates it on GitHub. Mention it elsewhere as #L-3 and replay rewrites that to the real number.</p>
+      <div class="actions end"><button class="btn-primary">Queue issue</button></div>
+    </div></div>
+  </div>
+  <aside>{{if .Data}}<div class="sidebar-item"><h2>Labels</h2>{{range .Data}}<label style="display:block"><input type="checkbox" name="label" value="{{.}}"> <span class="label">{{.}}</span></label>{{end}}</div>{{end}}</aside>
+</div>
 </form>
 {{template "foot"}}{{end}}
 
-{{define "issue"}}{{template "head" .}}{{with .Data}}
-<h1>{{.Title}} <span class="muted">{{if .Local}}{{.Ref}}{{else}}#{{.Ref}}{{end}}</span></h1>
-<p>
-  <span class="badge">{{.State}}</span>{{if .IsPR}}<span class="badge">pull request</span>{{end}}
-  {{range .Labels}}<span class="badge">{{.}}</span>{{end}}
-</p>
-{{with .PR}}
-<p><code>{{.Head}}</code> into <code>{{.Base}}</code>{{if .Fork}} <span class="badge">from a fork</span>{{end}}
-  {{if .HeadSHA}} · <a href="/{{$.Repo.FullName}}/issues/{{$.Data.Ref}}/files">Files changed{{if $.Writable}} and review{{end}}</a>{{end}}</p>
-{{if .MergedLocal}}<p><span class="badge">{{.MergedLocal}}</span>
-  {{if not .Merged}}<span class="badge">{{if $.Data.Local}}not on GitHub yet{{else}}{{$.Data.State}} on GitHub as #{{$.Data.Ref}}, not merged there{{end}}</span>{{end}}</p>{{end}}
-{{if .Approvals}}<p>Approved by {{range $i, $a := .Approvals}}{{if $i}}, {{end}}{{$a}}{{end}}
-  <span class="badge">approved on GitCove, not checked by GitHub</span></p>{{end}}
-{{if $.Writable}}
-  {{if .Mergeable}}<form method="post" action="/{{$.Repo.FullName}}/issues/{{$.Data.Ref}}/merge">
-    <button>Merge into {{.Base}} on GitCove</button>
-    <span class="muted">A merge commit on GitCove only. GitHub's checks aren't run or required here; on GitHub it arrives as this PR, for a person to merge.</span></form>
-  {{else}}<p class="muted">Can't be merged on GitCove: {{.Why}}.</p>{{end}}
-{{end}}
-{{end}}
-{{if .Queued}}<p class="muted">Queued for GitHub: {{range $i, $q := .Queued}}{{if $i}}; {{end}}{{$q}}{{end}}.</p>{{end}}
-<div class="post"><div class="muted"><strong>{{.Author}}</strong> · {{when .At}}</div><div class="text">{{.Body}}</div></div>
+{{define "pr-header"}}{{/* the title, state and Conversation / Files changed tabs of an issue or PR; . is the page */}}{{with .Data}}
+<div class="gh-header{{if not (and .PR .PR.HeadSHA)}} ruled{{end}}">
+  <h1>{{.Title}} <span class="muted">{{if .Local}}{{.Ref}}{{else}}#{{.Ref}}{{end}}</span></h1>
+  <div class="gh-meta">
+    <span class="state {{if and .PR .PR.Merged}}done{{else if eq .State "open"}}open{{else if .IsPR}}closed{{else}}done{{end}}">
+      {{if .IsPR}}{{if and .PR .PR.Merged}}{{template "i-merge"}}{{else}}{{template "i-pr"}}{{end}}{{else if eq .State "open"}}{{template "i-issue"}}{{else}}{{template "i-issue-closed"}}{{end}}
+      {{if and .PR .PR.Merged}}merged{{else}}{{.State}}{{end}}</span>
+    {{with .PR}}<span><strong>{{$.Data.Author}}</strong> wants to merge <code class="branch">{{.Head}}</code> into <code class="branch">{{.Base}}</code></span>{{if .Fork}}<span class="badge">from a fork</span>{{end}}
+    {{else}}<span><strong>{{.Author}}</strong> opened this {{if .IsPR}}pull request{{else}}issue{{end}} on {{when .At}}</span>{{end}}
+  </div>
+</div>
+{{if and .PR .PR.HeadSHA}}<nav class="tabnav" aria-label="Pull request">
+  <a href="/{{$.Repo.FullName}}/issues/{{.Ref}}"{{if eq $.Tab "issue"}} aria-current="page"{{end}}>{{template "i-comment"}} Conversation</a>
+  <a href="/{{$.Repo.FullName}}/issues/{{.Ref}}/files"{{if eq $.Tab "files"}} aria-current="page"{{end}}>{{template "i-file-diff"}} Files changed{{if and (eq $.Tab "issue") $.Writable}} and review{{end}}</a>
+</nav>{{end}}
+{{end}}{{end}}
+
+{{define "issue"}}{{template "head" .}}{{template "pr-header" .}}{{with .Data}}
+<div class="layout">
+<div>
+{{if .Queued}}<div class="flash">{{template "i-info"}}<div>Queued for GitHub: {{range $i, $q := .Queued}}{{if $i}}; {{end}}{{$q}}{{end}}.</div></div>{{end}}
+<div class="timeline">
+<div class="tl-item"><span class="avatar">{{template "i-person"}}</span>
+  <div class="comment"><div class="comment-head"><strong>{{.Author}}</strong> commented on {{when .At}}</div><div class="comment-body text">{{.Body}}</div></div></div>
 {{if and $.Writable .EditableBody}}
-<details><summary>Edit title and description</summary>
+<details class="tl-indent"><summary class="btn btn-sm">Edit title and description</summary>
 <form method="post" action="/{{$.Repo.FullName}}/issues/{{.Ref}}/edit">
   <p><input type="text" name="title" value="{{.Title}}" required maxlength="256"></p>
   <p><textarea name="body">{{.Body}}</textarea></p>
-  <p class="muted">If GitHub's version changes meanwhile, GitHub's is kept and yours is posted as a comment.</p>
-  <button>Queue edit</button>
+  <p class="muted small">If GitHub's version changes meanwhile, GitHub's is kept and yours is posted as a comment.</p>
+  <button class="btn-primary">Queue edit</button>
 </form>
 </details>
 {{end}}
 {{range .Posts}}
-<div class="post"><div class="muted"><strong>{{.Author}}</strong> · {{when .At}}{{if .Badge}}<span class="badge">{{.Badge}}</span>{{end}}</div><div class="text">{{.Body}}</div></div>
+<div class="tl-item"><span class="avatar">{{template "i-person"}}</span>
+  <div class="comment"><div class="comment-head"><strong>{{.Author}}</strong> commented on {{when .At}}{{if .Badge}}<span class="badge">{{.Badge}}</span>{{end}}</div><div class="comment-body text">{{.Body}}</div></div></div>
 {{end}}
 {{with .PR}}
 {{range .Reviews}}
-<div class="post"><div class="muted"><strong>{{.Author}}</strong>{{if .Verdict}} {{.Verdict}}{{else}} reviewed{{end}} · {{when .At}} · commit <code>{{printf "%.8s" .Commit}}</code>{{if .Badge}}<span class="badge">{{.Badge}}</span>{{end}}</div>{{if .Body}}<div class="text">{{.Body}}</div>{{end}}</div>
+<div class="tl-item"><span class="avatar">{{template "i-person"}}</span>
+  <div class="comment"><div class="comment-head"><strong>{{.Author}}</strong>{{if .Verdict}} {{.Verdict}}{{else}} reviewed{{end}} on {{when .At}} · commit <code>{{printf "%.8s" .Commit}}</code>{{if .Badge}}<span class="badge">{{.Badge}}</span>{{end}}</div>{{if .Body}}<div class="comment-body text">{{.Body}}</div>{{end}}</div></div>
 {{end}}
 {{range .Threads}}
-<div class="post"><div class="muted"><code>{{.Path}}</code>{{if .Line}} line {{.Line}}{{end}}</div>
-  {{range .Posts}}<div><span class="muted"><strong>{{.Author}}</strong> · {{when .At}}{{if .Badge}}<span class="badge">{{.Badge}}</span>{{end}}</span><div class="text">{{.Body}}</div></div>{{end}}
-  {{if $.Writable}}<div><details><summary>Reply</summary><form method="post" action="/{{$.Repo.FullName}}/issues/{{$.Data.Ref}}/reply">
-    <input type="hidden" name="parent" value="{{.Parent}}"><p><textarea name="body" required></textarea></p><button>Queue reply</button></form></details></div>{{end}}
-</div>
+<div class="tl-item"><span class="avatar">{{template "i-comment"}}</span>
+  <div class="comment"><div class="comment-head"><code>{{.Path}}</code>{{if .Line}} line {{.Line}}{{end}}</div>
+  {{range .Posts}}<div class="comment-body"><div class="muted"><strong style="color:var(--fg)">{{.Author}}</strong> on {{when .At}}{{if .Badge}} <span class="badge">{{.Badge}}</span>{{end}}</div><div class="text">{{.Body}}</div></div>{{end}}
+  {{if $.Writable}}<div class="comment-body"><details><summary class="btn btn-sm">Reply</summary><form method="post" action="/{{$.Repo.FullName}}/issues/{{$.Data.Ref}}/reply">
+    <input type="hidden" name="parent" value="{{.Parent}}"><p><textarea name="body" required></textarea></p><button class="btn-primary">Queue reply</button></form></details></div>{{end}}
+  </div></div>
+{{end}}
+{{if or .MergedLocal .Approvals $.Writable}}
+<div class="tl-item"><span class="avatar{{if or .Mergeable .MergedLocal}} ok{{end}}">{{template "i-merge"}}</span>
+  <div class="comment">
+  {{if .MergedLocal}}<div class="comment-body"><span class="badge">{{.MergedLocal}}</span>
+    {{if not .Merged}}<span class="badge">{{if $.Data.Local}}not on GitHub yet{{else}}{{$.Data.State}} on GitHub as #{{$.Data.Ref}}, not merged there{{end}}</span>{{end}}</div>{{end}}
+  {{if .Approvals}}<div class="comment-body">Approved by {{range $i, $a := .Approvals}}{{if $i}}, {{end}}<strong>{{$a}}</strong>{{end}}
+    <span class="badge">approved on GitCove, not checked by GitHub</span></div>{{end}}
+  {{if $.Writable}}
+    {{if .Mergeable}}<form class="comment-body" method="post" action="/{{$.Repo.FullName}}/issues/{{$.Data.Ref}}/merge">
+      <p class="muted">A merge commit on GitCove only. GitHub's checks aren't run or required here; on GitHub it arrives as this PR, for a person to merge.</p>
+      <button class="btn-primary">Merge into {{.Base}} on GitCove</button></form>
+    {{else}}<div class="comment-body muted">Can't be merged on GitCove: {{.Why}}.</div>{{end}}
+  {{end}}
+  </div></div>
 {{end}}
 {{end}}
 {{if $.Writable}}
-{{if or .Labels .AddLabels}}<div class="actions"><span class="muted">Labels:</span>
-  {{range .Labels}}<form method="post" action="/{{$.Repo.FullName}}/issues/{{$.Data.Ref}}/label">
-    <input type="hidden" name="op" value="remove"><input type="hidden" name="label" value="{{.}}"><button title="Remove label {{.}}">− {{.}}</button></form>{{end}}
-  {{range .AddLabels}}<form method="post" action="/{{$.Repo.FullName}}/issues/{{$.Data.Ref}}/label">
-    <input type="hidden" name="op" value="add"><input type="hidden" name="label" value="{{.}}"><button title="Add label {{.}}">+ {{.}}</button></form>{{end}}
-</div>{{end}}
-<form method="post" action="/{{$.Repo.FullName}}/issues/{{.Ref}}/comment">
-  <p><textarea name="body" required placeholder="Comment"></textarea></p>
-  <div class="actions"><button>Queue comment</button>
-    {{if not (and .PR (or .PR.Merged .PR.MergedLocal))}}<button form="state" title="Queues the change for GitHub">{{if eq .State "open"}}Close{{else}}Reopen{{end}}</button>{{end}}</div>
-</form>
+<div class="tl-item"><span class="avatar">{{template "i-person"}}</span>
+<form class="comment" method="post" action="/{{$.Repo.FullName}}/issues/{{.Ref}}/comment">
+  <div class="comment-head"><strong>Add a comment</strong></div>
+  <div class="comment-body"><textarea name="body" required placeholder="Comment" aria-label="Comment"></textarea></div>
+  <div class="comment-foot actions end">
+    {{if not (and .PR (or .PR.Merged .PR.MergedLocal))}}<button form="state" title="Queues the change for GitHub">{{if eq .State "open"}}{{template "i-issue-closed"}} Close{{else}}Reopen{{end}}</button>{{end}}
+    <button class="btn-primary">Queue comment</button></div>
+</form></div>
 <form id="state" method="post" action="/{{$.Repo.FullName}}/issues/{{.Ref}}/state">
   <input type="hidden" name="state" value="{{if eq .State "open"}}closed{{else}}open{{end}}">
 </form>
 {{end}}
+</div>
+</div>
+<aside>
+  <div class="sidebar-item"><h2>Labels</h2>
+  {{if and $.Writable (or .Labels .AddLabels)}}<div class="actions">
+    {{range .Labels}}<form method="post" action="/{{$.Repo.FullName}}/issues/{{$.Data.Ref}}/label">
+      <input type="hidden" name="op" value="remove"><input type="hidden" name="label" value="{{.}}"><button class="btn-sm" title="Remove label {{.}}">− {{.}}</button></form>{{end}}
+    {{range .AddLabels}}<form method="post" action="/{{$.Repo.FullName}}/issues/{{$.Data.Ref}}/label">
+      <input type="hidden" name="op" value="add"><input type="hidden" name="label" value="{{.}}"><button class="btn-sm" title="Add label {{.}}">+ {{.}}</button></form>{{end}}
+  </div>
+  {{else}}{{range .Labels}}<span class="label">{{.}}</span> {{else}}<span class="muted">None yet</span>{{end}}{{end}}
+  </div>
+</aside>
+</div>
 {{end}}{{template "foot"}}{{end}}
 
 {{define "diff"}}
-{{if .Diff.Truncated}}<p class="muted">The diff is too long to show in full. See the rest with <code>git diff</code>.</p>{{end}}
+{{if .Diff.Truncated}}<div class="flash warn">{{template "i-alert"}}<div>The diff is too long to show in full. See the rest with <code>git diff</code>.</div></div>{{end}}
 {{range .Diff.Files}}
-<h3><code>{{.Path}}</code></h3>
-<table class="diff">
+<div class="file">
+<h3 class="file-header"><code>{{.Path}}</code></h3>
+<div class="file-body"><table class="diff">
 {{range .Lines}}<tr class="{{if eq .Kind "+"}}add{{else if eq .Kind "-"}}del{{else if eq .Kind "@"}}hunk{{end}}">
   <td class="n">{{if .Old}}{{.Old}}{{end}}</td><td class="n">{{if .New}}{{.New}}{{end}}</td>
   <td>{{if ne .Kind "@"}}{{.Kind}}{{end}}{{.Text}}{{if and $.Comment .Field}}<details><summary>comment</summary><textarea name="{{.Field}}" aria-label="Comment on {{if .New}}line {{.New}}{{else}}removed line {{.Old}}{{end}}"></textarea></details>{{end}}</td>
 </tr>{{end}}
-</table>
-{{else}}<p class="muted">No changes.</p>
+</table></div>
+</div>
+{{else}}<div class="box blank">No changes.</div>
 {{end}}
 {{end}}
 
 {{define "branches"}}{{template "head" .}}
-<h1>Branches</h1>
-<p class="muted">As GitCove serves them: GitHub's, plus what was pushed or merged here during an outage.</p>
-<table>
-{{range .Data}}
-  <tr><td><code>{{.Name}}</code></td>
-    <td>{{.Subject}} <span class="muted"><code>{{printf "%.8s" .Commit}}</code> · {{when .When}}</span></td>
-    <td>{{if ne .Name $.Repo.DefaultBranch}}<a href="/{{$.Repo.FullName}}/compare?head={{.Name}}">compare with {{$.Repo.DefaultBranch}}</a>{{end}}</td></tr>
-{{else}}<tr><td class="muted">No branches yet.</td></tr>
-{{end}}
-</table>
+<div class="box">
+  <div class="box-header"><div><h1 style="font-size:14px">Branches</h1>
+    <div class="muted small">As GitCove serves them: GitHub's, plus what was pushed or merged here during an outage.</div></div></div>
+  {{range .Data}}
+  <div class="box-row">
+    <span class="muted">{{template "i-branch"}}</span>
+    <div class="grow">
+      <code class="branch">{{.Name}}</code>{{if eq .Name $.Repo.DefaultBranch}} <span class="badge">default</span>{{end}}
+      <div class="small">{{.Subject}} <span class="muted"><code>{{printf "%.8s" .Commit}}</code> · updated {{when .When}}</span></div>
+    </div>
+    {{if ne .Name $.Repo.DefaultBranch}}<a class="btn btn-sm" href="/{{$.Repo.FullName}}/compare?head={{.Name}}">compare with {{$.Repo.DefaultBranch}}</a>{{end}}
+  </div>
+  {{else}}<div class="blank">No branches yet.</div>
+  {{end}}
+</div>
 {{template "foot"}}{{end}}
 
 {{define "compare"}}{{template "head" .}}
-<h1><code>{{.Data.Head}}</code> <span class="muted">compared with</span> <code>{{.Data.Base}}</code></h1>
+<div class="gh-header"><h1 style="font-size:24px">Comparing changes</h1>
+  <div class="box" style="background:var(--subtle);padding:8px 16px">{{template "i-branch"}} base: <code class="branch">{{.Data.Base}}</code> ← compare: <code class="branch">{{.Data.Head}}</code></div></div>
 {{if and .Writable .Data.Diff.Files}}
-<details><summary>Open a pull request</summary>
+<details class="box" style="padding:16px"><summary class="btn btn-primary">Open a pull request</summary>
 <form method="post" action="/{{.Repo.FullName}}/pulls">
   <input type="hidden" name="head" value="{{.Data.Head}}"><input type="hidden" name="base" value="{{.Data.Base}}">
-  <p><label>Title<br><input type="text" name="title" required maxlength="256"></label></p>
-  <p><label>Description<br><textarea name="body"></textarea></label></p>
-  <p class="muted">It gets a temporary number such as L-3 until replay opens it on GitHub. "Fixes #12" or "Fixes #L-2" closes that issue when the PR is merged.</p>
-  <button>Queue pull request</button>
+  <label class="field">Title<input type="text" name="title" required maxlength="256"></label>
+  <label class="field">Description<textarea name="body"></textarea></label>
+  <p class="muted small">It gets a temporary number such as L-3 until replay opens it on GitHub. "Fixes #12" or "Fixes #L-2" closes that issue when the PR is merged.</p>
+  <button class="btn-primary">Queue pull request</button>
 </form>
 </details>
 {{end}}
 {{template "diff" dict "Diff" .Data.Diff "Comment" false}}
 {{template "foot"}}{{end}}
 
-{{define "files"}}{{template "head" .}}{{with .Data}}
-<h1><a href="/{{$.Repo.FullName}}/issues/{{.Ref}}">{{.Title}}</a> <span class="muted">{{if .Local}}{{.Ref}}{{else}}#{{.Ref}}{{end}}</span></h1>
-<p><code>{{.PR.Head}}</code> into <code>{{.PR.Base}}</code> · commit <code>{{printf "%.12s" .PR.HeadSHA}}</code></p>
+{{define "files"}}{{template "head" .}}{{template "pr-header" .}}{{with .Data}}
+<p class="muted">Showing commit <code>{{printf "%.12s" .PR.HeadSHA}}</code></p>
 {{if $.Writable}}
 <form method="post" action="/{{$.Repo.FullName}}/issues/{{.Ref}}/review">
 <input type="hidden" name="commit" value="{{.PR.HeadSHA}}">
 {{template "diff" dict "Diff" .Diff "Comment" true}}
-<fieldset><legend>Review</legend>
-  <p><textarea name="body" placeholder="Summary"></textarea></p>
+<fieldset class="box review"><legend><strong>Review changes</strong></legend>
+  <p><textarea name="body" placeholder="Summary" aria-label="Summary"></textarea></p>
   <p><label><input type="radio" name="verdict" value="comment" checked> Comment</label>
   {{if not .PR.Author}}<label><input type="radio" name="verdict" value="approve"> Approve</label>
   <label><input type="radio" name="verdict" value="request_changes"> Request changes</label>{{end}}</p>
-  <p class="muted">Your review is tied to this commit. An approval reaches GitHub as yours only if you authorised GitCove and the PR is still at this commit; otherwise it is posted as a comment saying so.</p>
-  <button>Queue review</button>
+  <p class="muted small">Your review is tied to this commit. An approval reaches GitHub as yours only if you authorised GitCove and the PR is still at this commit; otherwise it is posted as a comment saying so.</p>
+  <button class="btn-primary">Queue review</button>
 </fieldset>
 </form>
 {{else}}{{template "diff" dict "Diff" .Diff "Comment" false}}{{end}}
