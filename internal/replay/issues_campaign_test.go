@@ -222,6 +222,13 @@ func issueCampaign(t *testing.T, seed uint64) {
 		waits[s.ID] = s.Waits
 	}
 
+	uncertainPosted := 0
+	for _, it := range items {
+		if it.State == "uncertain" && len(posted[it.OpID]) > 0 {
+			uncertainPosted++
+		}
+	}
+	t.Logf("uncertain items already on GitHub (a blind retry would have duplicated them): %d", uncertainPosted)
 	for _, it := range items {
 		n := len(posted[it.OpID])
 		text := it.Kind == "issue" || it.Kind == "comment" || it.Target == "note"

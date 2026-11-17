@@ -65,9 +65,13 @@ const usage = `usage: cove <command>
   pr create [-title T] [-body B] [-base BRANCH]
                                            during a failover, in a clone: open a PR on GitCove from the current branch
   pr merge NUMBER|L-n                      during a failover: merge an approved PR into its base on GitCove
+  version
 
 Configuration comes from COVE_* environment variables (see README.md).
 `
+
+// version is set by the release build (-ldflags -X main.version=...).
+var version = "dev"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -82,6 +86,9 @@ func run(args []string) error {
 		return errors.New("no command")
 	}
 	switch args[0] {
+	case "version":
+		fmt.Println("cove", version)
+		return nil
 	case "hook": // run by git-receive-pack, not by people
 		os.Exit(gitstore.RunHook(args[1:]))
 	case "client":

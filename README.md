@@ -1,25 +1,78 @@
 # GitCove
 
-A self-hosted mirror of a GitHub organisation that developers can keep working on while GitHub is down, and that replays their work to GitHub afterwards. The build plan is in [`plan.md`](plan.md).
+A self-hosted mirror of a GitHub organisation that developers can keep working on while GitHub is down, and that replays their work to GitHub afterwards.
 
-**Status: milestone 3 (issue and comment replay).** GitCove mirrors every repo its GitHub App can see, with its issues, PRs and comments, and serves them to developers holding a GitCove token, including while GitHub is unreachable. During a failover that an admin starts, developers push branches to GitCove, and in its web interface they comment, open issues, label, close, reopen and edit. Afterwards GitCove replays that work to GitHub. It never force-pushes, work for the default branch arrives only as a PR, nothing is posted twice, and nothing newer on GitHub is overwritten. Opening PRs, reviews and merging on GitCove come in milestone 4.
+GitCove mirrors every repo its GitHub App can see, with issues, PRs, reviews and comments. During a failover that an admin starts, developers push branches to GitCove, and in its web interface they comment, open issues and PRs, review, and merge. Afterwards GitCove replays that work to GitHub. It never force-pushes, work for the default branch arrives only as a PR, nothing is posted twice, and nothing newer on GitHub is overwritten, including when GitCove is killed mid-replay or GitHub fails again.
 
-GitCove keeps a second copy of your private code, issues and comments. Protect the server and its disk the way you protect anything that holds source code.
+**Status: 1.0.** How it was tested, what the tests found and what was measured are in [`docs/results.md`](docs/results.md), and the story behind it in [`docs/writeup.md`](docs/writeup.md).
 
-## Run it
+## What it can't do
 
-You need a GitHub App installed on the organisation, with **Contents: read and write**, **Issues: read and write**, **Pull requests: read and write** and **Metadata: read**, and its private key. Replay needs the write permissions: it pushes branches, opens PRs, and posts issues and comments. Don't grant **Workflows**. Without it, GitHub refuses a pushed branch whose `.github/workflows` matches no current branch tip. GitCove checks this before pushing and sends such branches to the conflicts list (see below). A key that has Workflows could change CI and reach its secrets.
+- **CI and deploys stay blocked.** GitCove doesn't run GitHub Actions or a deploy pipeline. In the two years of GitHub incidents this project was planned from (472 incidents, November 2024 to October 2026), incidents that hit only Actions outnumbered full outages 84 to 8. In those 84, GitCove doesn't help at all, and in a full outage a hotfix can be written, reviewed and merged on GitCove but not deployed through GitHub.
+- **Few outages need it.** 15 of those 472 incidents (3%) justified failing over. A second Git remote already covers pushing code. GitCove's difference is that PR, review and issue work continues and reaches GitHub safely.
+- **Merges on GitCove aren't merges on GitHub.** A local merge arrives as an open PR with a note, and a person merges it on GitHub, where the usual checks run.
+- **Access is assigned by hand.** An admin gives each token its repos. GitCove doesn't yet follow GitHub's permissions, so removing someone on GitHub doesn't remove them here (planned for 1.1). Until then, run it for a team you'd trust with every repo you assign.
+- **Not mirrored or replayed:** Git LFS objects, wikis, releases, discussions, projects, draft status, assignees, resolved conversations, check results, squash and rebase merges, and tags pushed during a failover.
+- **One edit race remains.** GitHub has no conditional update for issues, so a title or description changed on GitHub in the instant between replay's read and its write can be overwritten. It stays in GitHub's edit history.
+
+## Security
+
+- **GitCove is a second copy of your private code,** issues and comments. Protect the server and its disk as you protect anything that holds source code. Commits removed from GitHub by a force-push stay on GitCove's disk for 90 days (`COVE_RETENTION_DAYS`).
+- **The App's private key can write to every repo the App is installed on.** Keep it readable only by GitCove. Don't grant the App **Workflows**: a key with it could change CI and reach its secrets.
+- **A GitCove token is a password.** Whoever holds one can read its repos, and during a failover push to them and change their issues. Tokens are stored only as hashes. Always put TLS in front.
+- **Stored GitHub user tokens are the biggest risk, and they're optional.** If you turn on posting under people's own names, anyone who gets the server and its key can act as those people, within the App's permissions, until they revoke the App. Leave it off and everything is posted by the App with an attribution line.
+- Report a vulnerability privately through the repository's security advisories, not a public issue.
+
+## Install
+
+You need a Linux server with Docker and disk for a copy of every repo, and owner rights on the GitHub organisation.
+
+**1. Create the GitHub App.** In the organisation's settings, open Developer settings, GitHub Apps, New GitHub App.
+
+- Name: anything unique on GitHub, such as `cove-my-org`. Homepage URL: any URL.
+- Webhook: untick **Active** (see [Webhooks](#webhooks) to turn it on later).
+- Repository permissions: **Contents: read and write**, **Issues: read and write**, **Pull requests: read and write**. **Metadata: read** is added for you. Nothing else, and not **Workflows**.
+- "Where can this GitHub App be installed?": only on this account.
+
+Create it, note the **App ID** on its page, and under "Private keys" generate a key, which downloads a `.pem` file. Then choose Install App and install it on the organisation, for all repos or the ones GitCove should mirror.
+
+**2. Run GitCove.** Copy the key to the server, readable only by the container's user (UID 10001):
 
 ```sh
-docker build -t gitcove .
-docker run -d --name gitcove -p 8080:8080 -v gitcove-data:/data \
-  -e COVE_ORG=my-org -e COVE_APP_ID=123456 -e COVE_APP_KEY_FILE=/data/app.pem \
-  gitcove
+sudo install -o 10001 -m 600 cove-my-org.*.private-key.pem /etc/gitcove-app.pem
+docker run -d --name gitcove --restart unless-stopped -p 127.0.0.1:8080:8080 \
+  -v gitcove-data:/data -v /etc/gitcove-app.pem:/run/app.pem:ro \
+  -e COVE_ORG=my-org -e COVE_APP_ID=123456 -e COVE_APP_KEY_FILE=/run/app.pem \
+  ghcr.io/tabaak/gitcove:latest
 ```
 
-Or without Docker, with Go 1.26 and `git` installed: `go build ./cmd/cove && ./cove serve`.
+It starts mirroring at once. `curl localhost:8080/status` shows `repos_never_synced` falling to 0. Keep `/data` on a Docker volume or a local Linux disk. On a macOS or Windows bind mount, or a network filesystem, the server doesn't see what the admin CLI writes, because SQLite's write-ahead log needs shared memory.
 
-Put TLS in front of it, for example with Caddy. Developers send their token as an HTTP password, so plain HTTP exposes it. GitCove can also serve TLS itself, using `COVE_TLS_CERT` and `COVE_TLS_KEY`.
+Without Docker: download a binary from the releases page, or build one with Go 1.26 (`go build ./cmd/cove`), install `git` with `git-http-backend` (the `git-daemon` package on Alpine), and run `cove serve` with the same variables.
+
+**3. Put TLS in front.** Developers send their token as an HTTP password, so plain HTTP exposes it. With [Caddy](https://caddyserver.com), one line does it: `caddy reverse-proxy --from gitcove.example.com --to localhost:8080`. GitCove can also serve TLS itself, with `COVE_TLS_CERT` and `COVE_TLS_KEY`.
+
+**4. Give each developer a token.**
+
+```sh
+docker exec gitcove cove token create -name alice -repo my-org/api -repo my-org/web   # prints the token once
+```
+
+**5. Each developer sets up once,** with the `cove` binary from the releases page (see [For developers](#for-developers)):
+
+```sh
+COVE_TOKEN=<token> cove client setup -url https://gitcove.example.com -org my-org
+```
+
+**6. Try it before you need it.** Run `cove failover start`, push a branch and comment on an issue through GitCove, then `cove failover end`, read the plan it prints, and `cove replay approve`. The sections below describe each step.
+
+**Upgrading:** pull the new image and start the container again on the same volume. Database migrations run at startup. Back up the volume first.
+
+## Maintenance
+
+GitCove is maintained by one person, in spare time. Bug reports with a way to reproduce them are welcome and fixes aren't promised on any schedule. GitHub can change the API behaviour GitCove depends on. When a replay write fails, replay pauses and alerts the admin rather than guess, and failed syncs show on `/status` and in the banner. If you depend on it, pin a version and run a failover drill after upgrading.
+
+## Reference
 
 ### Configuration
 
@@ -28,7 +81,7 @@ Put TLS in front of it, for example with Caddy. Developers send their token as a
 | `COVE_ORG` | required | GitHub organisation |
 | `COVE_APP_ID` | required | GitHub App ID |
 | `COVE_APP_KEY_FILE` | required | Path to the App's private key (PEM) |
-| `COVE_DATA` | `./data` | Database and bare repos |
+| `COVE_DATA` | `./data` (`/data` in the image) | Database and bare repos |
 | `COVE_LISTEN` | `:8080` | HTTP listen address |
 | `COVE_TLS_CERT`, `COVE_TLS_KEY` | unset | Serve HTTPS directly |
 | `COVE_SYNC_INTERVAL` | `5m` | Time between sync cycles |
@@ -55,7 +108,7 @@ cove token list
 cove token revoke 3
 ```
 
-Tokens are stored only as SHA-256 hashes. An admin assigns each token's repos by hand, and a repo can be assigned only after its first sync. Token creation and revocation are written to the audit log. A token that can read a repo can also push to it and change its issues during failover. There is no separate write permission yet, and permission sync from GitHub comes in milestone 7.
+Tokens are stored only as SHA-256 hashes. An admin assigns each token's repos by hand, and a repo can be assigned only after its first sync. Token creation and revocation are written to the audit log. A token that can read a repo can also push to it and change its issues during failover. There is no separate write permission yet, and permission sync from GitHub is planned for 1.1.
 
 ### Restoring branches
 
@@ -70,7 +123,7 @@ cove restore -push my-org/api feature 20261115T101500.123Z    # ...and create it
 
 A restore never moves an existing branch: it makes a new one, which syncs leave alone even if GitHub doesn't have it. `-push` needs the read-write App, and creates the branch without forcing. With the read-only App, a developer fetches the restored branch from GitCove and pushes it to GitHub. Restores are written to the audit log.
 
-Saved tips are hidden from clients. GitCove serves Git protocol v0 only, because protocol v2 hands out any commit in the repo to a client that knows its ID, hidden or not. Under v0 a client gets only what's reachable from the refs it's shown. So a force-pushed secret can't be fetched from GitCove by its commit ID, until someone restores that branch. Two limits: during failover, a token holder who knows the commit ID could craft a push that builds on it, making it reachable; and the secret stays on GitCove's disk for the retention window. Removing data early is `cove purge` (milestone 8).
+Saved tips are hidden from clients. GitCove serves Git protocol v0 only, because protocol v2 hands out any commit in the repo to a client that knows its ID, hidden or not. Under v0 a client gets only what's reachable from the refs it's shown. So a force-pushed secret can't be fetched from GitCove by its commit ID, until someone restores that branch. Two limits: during failover, a token holder who knows the commit ID could craft a push that builds on it, making it reachable; and the secret stays on GitCove's disk for the retention window. Removing data early, `cove purge`, is planned for 1.1.
 
 ### Webhooks
 
@@ -255,6 +308,8 @@ The PR campaign (`TestPullCampaign`) adds a third person and has them push, open
 
 CI runs gofmt, `go vet`, golangci-lint, the tests with `-race`, and a Docker build. A nightly run uses 200 seeds.
 
+Two scripts run the real binary against a sandbox organisation on GitHub (setup in [`spikes/README.md`](spikes/README.md)). `spikes/sandbox.sh` runs a whole failover: pushes, a comment, an edit that conflicts with one on GitHub, a new issue, a PR that references it, a review with a line comment, a local merge, a diverged branch, and GitCove killed mid-replay. Then it checks on GitHub that everything arrived once and nothing was overwritten. `spikes/measure.sh` takes the measurements in [`docs/results.md`](docs/results.md). Releasing is described in [`RELEASING.md`](RELEASING.md).
+
 ## Code layout
 
 ```
@@ -272,4 +327,4 @@ fakehub/             fault-injecting GitHub stand-in
 
 ## Licence
 
-Apache 2.0.
+Apache 2.0: see [`LICENSE`](LICENSE). The licences of the libraries in the binary are in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). The Docker image also contains Git, BusyBox and other Alpine Linux packages under their own licences, some of them GPL. Each release carries the source of those as `gitcove-gpl-sources.tar.gz`, and SBOMs for the binaries and the image.

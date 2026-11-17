@@ -83,9 +83,14 @@ func replayCampaign(t *testing.T, seed uint64, degraded bool) {
 			if out, err := push(dev, b); err == nil {
 				accepted[sha] = b
 				delete(copied, b)
-			} else if degraded && !strings.Contains(out, "GitCove:") {
-				refused++ // a sync moved the branch on GitCove meanwhile; the developer pulls and pushes again
-			} else if !(protectMain && b == "main" && strings.Contains(out, "protected")) {
+			} else if protectMain && b == "main" && strings.Contains(out, "protected") {
+				// as it should be
+			} else if degraded && (!strings.Contains(out, "GitCove:") || strings.Contains(out, "cannot lock ref") || strings.Contains(out, "is protected")) {
+				// A sync moved the branch on GitCove meanwhile, before or just after the hook, and the
+				// developer pulls and pushes again. Or a sync fetched a branch replay had just created
+				// while its branch listing failed, so the branch counts as protected until the next sync.
+				refused++
+			} else {
 				t.Fatalf("push to %s refused: %s", b, out)
 			}
 			switch rng.IntN(14) { // meanwhile, on GitHub (rarely main, so its work often could fast-forward)
@@ -184,7 +189,8 @@ func replayCampaign(t *testing.T, seed uint64, degraded bool) {
 
 	// 1. Nothing lost (R2): every item is final, and every pushed commit is on GitHub or kept in a conflict.
 	held := map[string]bool{}
-	prOf := map[string]string{} // fallback branch -> item result
+	prOf := map[string]string{}  // fallback branch -> item result
+	started := map[string]bool{} // fallback branches sent before their work ended in conflicts
 	for b, items := range e.items(t) {
 		for _, it := range items {
 			switch it.State {
@@ -194,6 +200,9 @@ func replayCampaign(t *testing.T, seed uint64, degraded bool) {
 				}
 			case "conflict":
 				held[b] = true
+				if it.Target != "" && strings.Contains(it.Result, "already sent to "+it.Target) {
+					started[it.Target] = true // sent before the conflict, and the admin is told: its PR may exist
+				}
 			default:
 				t.Fatalf("item %d (%s) ended %s", it.ID, b, it.State)
 			}
@@ -226,7 +235,7 @@ func replayCampaign(t *testing.T, seed uint64, degraded bool) {
 		if heads[pr.Head] > 1 {
 			t.Errorf("second PR from %s", pr.Head)
 		}
-		if want := fmt.Sprintf("PR #%d from %s", pr.Number, pr.Head); prOf[pr.Head] != want {
+		if want := fmt.Sprintf("PR #%d from %s", pr.Number, pr.Head); prOf[pr.Head] != want && !started[pr.Head] {
 			t.Errorf("PR #%d from %s, but replay recorded %q", pr.Number, pr.Head, prOf[pr.Head])
 		}
 		// Commits developers had already pushed to GitHub get no fallback PR.

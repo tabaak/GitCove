@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -308,5 +309,43 @@ func TestAcceptedPushMessage(t *testing.T) {
 		if out, err := push(dev, c.branch); err != nil || !strings.Contains(out, "remote: GitCove: ") || !strings.Contains(out, c.want) {
 			t.Fatalf("%s push to %s: %v: %s\nwant %q", c.mode, c.branch, err, out, c.want)
 		}
+	}
+}
+
+// TestConflictNamesSentFallback: replay pushes main's fallback branch and dies before recording
+// the PR; a second outage then adds a push GitHub would refuse, so the branch ends in conflicts.
+// The conflict must name the branch already on GitHub (found by TestReplayCampaign, seed 843 of 1000).
+func TestConflictNamesSentFallback(t *testing.T) {
+	ctx := context.Background()
+	e := setup(t, 1, "app")
+	e.mode(t, store.Failover)
+	dev := e.clone(t, "app")
+	work(t, dev, "main", "m.txt")
+	if out, err := push(dev, "main"); err != nil {
+		t.Fatal(out)
+	}
+	e.mode(t, store.Reconciling, store.Replaying)
+	e.r.Kill = func(point string) error {
+		if point == "pushed" {
+			return errKilled
+		}
+		return nil
+	}
+	if err := e.r.Pass(ctx); !errors.Is(err, errKilled) {
+		t.Fatalf("pass: %v", err)
+	}
+	e.r.Kill = nil
+	e.mode(t, store.Failover) // a second outage: a push that changes a workflow, which GitHub would refuse
+	work(t, dev, "main", ".github/workflows/ci.yml")
+	if out, err := push(dev, "main"); err != nil {
+		t.Fatal(out)
+	}
+	e.mode(t, store.Reconciling, store.Replaying)
+	if err := e.r.Pass(ctx); err != nil {
+		t.Fatal(err)
+	}
+	it := e.items(t)["main"][0]
+	if it.State != "conflict" || it.Target == "" || !strings.Contains(it.Result, "already sent to "+it.Target) {
+		t.Fatalf("item: %s, target %q: %s", it.State, it.Target, it.Result)
 	}
 }

@@ -211,14 +211,14 @@ Tasks:
 
 ### Milestone 7: proof and launch 1.0
 
-- [ ] Run the large fault campaign across the full scenario matrix (section 12), triage every failure, and keep a bug list with the fix for each.
-- [ ] Run the full scenario against the sandbox organisation.
-- [ ] Collect the measurements: runs by fault kind and any lost or duplicated items, how often case 6 gave `uncertain` and how many were real duplicates, sync delay (median and 95th percentile), API calls per repo per hour, backup and replay time at a stated repo size, and time from a fresh VPS to a working instance.
-- [ ] README: install, setup, limits (including CI and deploys staying blocked, and the 84 to 8 count), security warnings about private code and user tokens, and maintenance status.
-- [ ] Release: GoReleaser, multi-arch image on GHCR, GPLv2 source checklist, third-party notices and an SBOM.
-- [ ] Write-up, demo video (under 3 minutes, steps in section 11 of the design), and the release announcement.
+- [x] Run the large fault campaign across the full scenario matrix (section 12), triage every failure, and keep a bug list with the fix for each. *4,500 runs, all passing after the fixes: 1,000 seeds each for the mirror and webhook campaigns, 300 each for the push, issue and PR campaigns and both halves of the degraded campaign. **Changed: 300, not thousands, for the replay campaigns**, whose slower runs take over a minute; a first attempt at 1,000 was stopped after 199 runs. Three runs failed on the way: one bug (seed 843: a conflict didn't mention a fallback PR already on GitHub; fixed, `TestConflictNamesSentFallback`) and two where the campaign rejected a refusal GitCove makes by design. The bug list with fixes is in `docs/results.md`.*
+- [x] Run the full scenario against the sandbox organisation. *`spikes/sandbox.sh`: the real binary, a failover with pushes, a comment, an issue, a PR, a review, an approval and a local merge, a conflicting edit and commit on GitHub, and `kill -9` mid-replay. 24 of 24 checks on the third run; the second found GitHub's listing lag hiding an issue created seconds before a sync. Not covered: posting under a person's own account, real webhook deliveries, a real outage, and GitHub's refusal of workflow changes (the sandbox App has the Workflows permission).*
+- [x] Collect the measurements: runs by fault kind and any lost or duplicated items, how often case 6 gave `uncertain` and how many were real duplicates, sync delay (median and 95th percentile), API calls per repo per hour, backup and replay time at a stated repo size, and time from a fresh VPS to a working instance. *In `docs/results.md`, from the campaigns and `spikes/measure.sh`. Lost or duplicated: 0. `uncertain`: 3,506 of 16,996 queued changes under the campaigns' faults, 349 of them already on GitHub; 0 of 130 against real GitHub. Sync delay: median 153 s and p95 289 s polling every 5 minutes; 2.5 s and 3.6 s with webhooks, sent from the test machine. 165 API requests per repo per hour. First backup of 3 repos (82 MB) 39 s; replay of 100 comments and 5 branches 117 s. **Changed: runs are counted by campaign, not by fault kind**, since each run mixes faults by seed. **Not done: the fresh-VPS time.** Measured instead: 22 s from a container on an empty volume to the first clone, on a laptop, which leaves out the server, Docker, creating the App and pulling the image.*
+- [x] README: install, setup, limits (including CI and deploys staying blocked, and the 84 to 8 count), security warnings about private code and user tokens, and maintenance status. *Following it on a clean container found that the image couldn't serve Git (Alpine ships `git-http-backend` in `git-daemon`; fixed), and that `/data` on a macOS bind mount breaks the admin CLI (documented). The README warns against giving people outside the team access before permission sync (milestone 8).*
+- [ ] Release: GoReleaser, multi-arch image on GHCR, GPLv2 source checklist, third-party notices and an SBOM. *Prepared, not released. `.goreleaser.yaml` (a snapshot build passes), `.github/workflows/release.yml`, `LICENSE`, `THIRD_PARTY_NOTICES.md` with `release/notices.sh`, `release/gpl-sources.sh` (run against a local image) and the checklist in `RELEASING.md`. The workflow has never run: the repo has no remote, so nothing is on GHCR and no tag exists. For the same reason CI has never run, and every "in CI" and "nightly" figure in this plan is a local run.*
+- [ ] Write-up, demo video (under 3 minutes, steps in section 11 of the design), and the release announcement. *The write-up is `docs/writeup.md`, and the announcement is drafted in `RELEASING.md`. The video isn't recorded and nothing is posted.*
 
-**Exit:** a stranger can install it from the README alone, and the results are published.
+**Exit:** a stranger can install it from the README alone, and the results are published. *Not met yet. The results are written but not published, and only the author has installed from the README, with a locally built image, since the published one doesn't exist. What's left needs a person: push the repo, let CI pass, tag, record the video, publish, and have somebody else install it (`RELEASING.md`).*
 
 ### Milestone 8: 1.1
 
@@ -261,7 +261,7 @@ Tasks:
 | 6 | A sync straight after a restore, dropped, repeated and out-of-order webhooks |
 | 8 | A repo deleted on GitHub, the App uninstalled |
 
-Every fault is seeded, so any failing run can be repeated exactly. Proposed targets: at least 200 seeds per scenario family at each milestone exit, and thousands in milestone 7. These numbers are a starting point.
+Every fault is seeded, so any failing run can be repeated exactly. Proposed targets: at least 200 seeds per scenario family at each milestone exit, and thousands in milestone 7. These numbers are a starting point. *Milestone 7 ran 1,000 for the two sync families and 300 for each replay family.*
 
 ## 13. Engineering risks
 
@@ -278,7 +278,7 @@ Every fault is seeded, so any failing run can be repeated exactly. Proposed targ
 | Automatic failover has a false alarm or flaps | Opt-in, both Git and API must fail, a cooldown, and flapping faults in tests |
 | GitHub limits or suspends API access | Stay inside documented limits, and stop the queue on any block |
 | The interface keeps growing | Only features that help during an outage get built |
-| GitCove falls behind GitHub's API | Alert on persistent sync errors, and state the maintenance status in the README |
+| GitCove falls behind GitHub's API | Alert on persistent sync errors, and state the maintenance status in the README. *The alert isn't built: a failed sync shows on the status page and in the stale-data warning only* |
 
 ## 14. If time runs short
 

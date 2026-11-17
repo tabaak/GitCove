@@ -1,0 +1,222 @@
+### sandbox run at 2026-11-16T16:16:57Z
+## sb-1116161657: GitHub before the outage
+refs/heads/sb-1116161657-diverge
+issue #15
+first sync (backup) took 22 s; data is 1,2M
+token 1 created; this is the only time its secret is shown:
+token 2 created; this is the only time its secret is shown:
+## failover: developers work on GitCove
+Failover started: GitCove accepts pushes. Developers' agents switch them to GitCove; without one, `cove client on`.
+{"time":"2026-11-16T17:17:23.225449+01:00","level":"ERROR","msg":"ALERT: failover started. GitHub is down, so Git goes to GitCove: the agent switches you, or run `cove client on`. Pushes are saved and sent to GitHub when it's back; default-branch work arrives as a PR."}
+remote: GitCove: GitHub is down. Your push is saved on GitCove and will be sent to GitHub when it's back.        
+remote: GitCove: GitHub is down. Your push is saved on GitCove and will be sent to GitHub when it's back.        
+ok   push to protected main is refused
+ok   comment
+ok   title edit
+ok   new issue
+ok   open PR
+ok   review with a line comment, approving
+ok   local merge
+## meanwhile on GitHub: a commit on the same branch, and the same title edited
+sb-1116161657 base, edited on GitHub
+## GitHub is back: replay, with GitCove killed partway
+{"time":"2026-11-16T17:17:28.439437+01:00","level":"ERROR","msg":"ALERT: failover ended. Push to GitHub again: the agent switches you back, or run `cove client off`. Work pushed to GitCove reaches GitHub once the admin approves the replay."}
+    Failover ended: pushes are refused again. Developers' agents switch them back to GitHub; without one, `cove client off`.
+    Mode: reconciling
+    
+    REPO                        BRANCH                 COMMIT    PUSHES  ACTION                                                                                  WHY
+    gitcove-sandbox/cove-spike  sb-1116161657-feature  acef9cbd  1       push to sb-1116161657-feature                                                           new branch
+    gitcove-sandbox/cove-spike  sb-1116161657-diverge  8eeec401  1       push gitcove/sb-1116161657-diverge-20261116-161733, open PR into sb-1116161657-diverge  diverged from GitHub
+    
+    Branches this replay pushes to GitHub. Each push can start workflows there:
+      gitcove-sandbox/cove-spike:sb-1116161657-feature
+      gitcove-sandbox/cove-spike:gitcove/sb-1116161657-diverge-20261116-161733
+    
+    GitHub is checked again before each push, so an action can still become a PR or a conflict, never the reverse.
+    
+    Changes to issues and PRs: 1 new issues, 1 new PRs, 1 comments, 0 label changes, 1 closes or reopens, 1 edits, 1 reviews, 0 replies to line comments, 1 local merges.
+    About 7 writes to GitHub, taking at least 7s at the write budget.
+    ID  REPO                        CHANGE                                                       ON   BY     POSTED AS  STATUS
+    5   gitcove-sandbox/cove-spike  new issue "sb-1116161657 new issue"                          L-1  ben    the App    ready
+    6   gitcove-sandbox/cove-spike  new PR "sb-1116161657 PR" (sb-1116161657-feature into main)  L-2  ben    the App    waits for the push to sb-1116161657-feature, which is pending
+    3   gitcove-sandbox/cove-spike  comment                                                      15   ben    the App    ready
+    8   gitcove-sandbox/cove-spike  note that it was merged into main on GitCove                 L-2  alice  the App    waits for L-2, which is pending
+    9   gitcove-sandbox/cove-spike  close                                                        L-1  alice  the App    waits for L-1, which is pending
+    4   gitcove-sandbox/cove-spike  edit title                                                   15   ben    the App    ready
+    7   gitcove-sandbox/cove-spike  review (approve, 1 line comments) of acef9cbd                L-2  alice  the App    waits for L-2, which is pending
+    
+    Approve with: cove replay approve
+Replay approved: the server replays now, re-checking GitHub before each push.
+killed GitCove with 1 item(s) mid-send
+replay of 9 changes took 23 s, including the kill and restart
+    Mode: normal
+    
+    Nothing to replay.
+## checks against GitHub
+ok   mode
+ok   main didn't move
+ok   feature branch has the developer's commit
+ok   diverged branch still has GitHub's commit
+ok   the outage commit is on one fallback branch
+ok   one PR for the fallback branch
+ok   one PR for the feature
+ok   comment posted once
+ok   GitHub's title kept
+ok   the other title proposed in a comment
+ok   new issue posted once
+ok   PR body names the new issue's real number
+ok   one review
+jq: error (at <stdin>:75): Cannot index string with string "original_commit_id"
+FAIL one line comment, on the reviewed commit: got '', want '1'
+ok   no approval counts: the reviewer never linked an account
+ok   one note that it was merged on GitCove
+ok   PR still open for a person to merge
+ok   after a sync GitCove serves exactly GitHub's branches and tags
+## sb-1116161657: 1 failed
+### sandbox run at 2026-11-16T16:18:40Z
+## sb-1116161840: GitHub before the outage
+refs/heads/sb-1116161840-diverge
+issue #19
+first sync (backup) took 19 s; data is 1,3M
+token 1 created; this is the only time its secret is shown:
+token 2 created; this is the only time its secret is shown:
+## failover: developers work on GitCove
+Failover started: GitCove accepts pushes. Developers' agents switch them to GitCove; without one, `cove client on`.
+{"time":"2026-11-16T17:19:03.894484+01:00","level":"ERROR","msg":"ALERT: failover started. GitHub is down, so Git goes to GitCove: the agent switches you, or run `cove client on`. Pushes are saved and sent to GitHub when it's back; default-branch work arrives as a PR."}
+remote: GitCove: GitHub is down. Your push is saved on GitCove and will be sent to GitHub when it's back.        
+remote: GitCove: GitHub is down. Your push is saved on GitCove and will be sent to GitHub when it's back.        
+ok   push to protected main is refused
+FAIL comment: got '404', want '303'
+FAIL title edit: got '404', want '303'
+ok   new issue
+ok   open PR
+ok   review with a line comment, approving
+ok   local merge
+## meanwhile on GitHub: a commit on the same branch, and the same title edited
+sb-1116161840 base, edited on GitHub
+## GitHub is back: replay, with GitCove killed partway
+{"time":"2026-11-16T17:19:08.032076+01:00","level":"ERROR","msg":"ALERT: failover ended. Push to GitHub again: the agent switches you back, or run `cove client off`. Work pushed to GitCove reaches GitHub once the admin approves the replay."}
+    Failover ended: pushes are refused again. Developers' agents switch them back to GitHub; without one, `cove client off`.
+    Mode: reconciling
+    
+    REPO                        BRANCH                 COMMIT    PUSHES  ACTION                                                                                  WHY
+    gitcove-sandbox/cove-spike  sb-1116161840-feature  5247828e  1       push to sb-1116161840-feature                                                           new branch
+    gitcove-sandbox/cove-spike  sb-1116161840-diverge  b2c2db08  1       push gitcove/sb-1116161840-diverge-20261116-161913, open PR into sb-1116161840-diverge  diverged from GitHub
+    
+    Branches this replay pushes to GitHub. Each push can start workflows there:
+      gitcove-sandbox/cove-spike:sb-1116161840-feature
+      gitcove-sandbox/cove-spike:gitcove/sb-1116161840-diverge-20261116-161913
+    
+    GitHub is checked again before each push, so an action can still become a PR or a conflict, never the reverse.
+    
+    Changes to issues and PRs: 1 new issues, 1 new PRs, 0 comments, 0 label changes, 1 closes or reopens, 0 edits, 1 reviews, 0 replies to line comments, 1 local merges.
+    About 5 writes to GitHub, taking at least 5s at the write budget.
+    ID  REPO                        CHANGE                                                       ON   BY     POSTED AS  STATUS
+    3   gitcove-sandbox/cove-spike  new issue "sb-1116161840 new issue"                          L-1  ben    the App    ready
+    4   gitcove-sandbox/cove-spike  new PR "sb-1116161840 PR" (sb-1116161840-feature into main)  L-2  ben    the App    waits for the push to sb-1116161840-feature, which is pending
+    6   gitcove-sandbox/cove-spike  note that it was merged into main on GitCove                 L-2  alice  the App    waits for L-2, which is pending
+    7   gitcove-sandbox/cove-spike  close                                                        L-1  alice  the App    waits for L-1, which is pending
+    5   gitcove-sandbox/cove-spike  review (approve, 1 line comments) of 5247828e                L-2  alice  the App    waits for L-2, which is pending
+    
+    Approve with: cove replay approve
+Replay approved: the server replays now, re-checking GitHub before each push.
+killed GitCove with 1 item(s) mid-send
+replay of 7 changes took 25 s, including the kill and restart
+    Mode: normal
+    
+    Nothing to replay.
+## checks against GitHub
+ok   mode
+ok   main didn't move
+ok   feature branch has the developer's commit
+ok   diverged branch still has GitHub's commit
+ok   the outage commit is on one fallback branch
+ok   one PR for the fallback branch
+ok   one PR for the feature
+FAIL comment posted once: got '0', want '1'
+ok   GitHub's title kept
+FAIL the other title proposed in a comment: got '0', want '1'
+ok   new issue posted once
+ok   PR body names the new issue's real number
+ok   one review
+ok   one line comment, on the reviewed commit
+ok   no approval counts: the reviewer never linked an account
+ok   one note that it was merged on GitCove
+ok   PR still open for a person to merge
+ok   after a sync GitCove serves exactly GitHub's branches and tags
+## sb-1116161840: 4 failed
+### sandbox run at 2026-11-16T16:20:25Z
+## sb-1116162025: GitHub before the outage
+refs/heads/sb-1116162025-diverge
+issue #23
+first sync (backup) took 21 s; data is 1,4M
+token 1 created; this is the only time its secret is shown:
+token 2 created; this is the only time its secret is shown:
+issue #23 was in the mirror after 1 extra sync(s)
+## failover: developers work on GitCove
+Failover started: GitCove accepts pushes. Developers' agents switch them to GitCove; without one, `cove client on`.
+{"time":"2026-11-16T17:21:05.334753+01:00","level":"ERROR","msg":"ALERT: failover started. GitHub is down, so Git goes to GitCove: the agent switches you, or run `cove client on`. Pushes are saved and sent to GitHub when it's back; default-branch work arrives as a PR."}
+remote: GitCove: GitHub is down. Your push is saved on GitCove and will be sent to GitHub when it's back.        
+remote: GitCove: GitHub is down. Your push is saved on GitCove and will be sent to GitHub when it's back.        
+ok   push to protected main is refused
+ok   comment
+ok   title edit
+ok   new issue
+ok   open PR
+ok   review with a line comment, approving
+ok   local merge
+## meanwhile on GitHub: a commit on the same branch, and the same title edited
+sb-1116162025 base, edited on GitHub
+## GitHub is back: replay, with GitCove killed partway
+{"time":"2026-11-16T17:21:09.418684+01:00","level":"ERROR","msg":"ALERT: failover ended. Push to GitHub again: the agent switches you back, or run `cove client off`. Work pushed to GitCove reaches GitHub once the admin approves the replay."}
+    Failover ended: pushes are refused again. Developers' agents switch them back to GitHub; without one, `cove client off`.
+    Mode: reconciling
+    
+    REPO                        BRANCH                 COMMIT    PUSHES  ACTION                                                                                  WHY
+    gitcove-sandbox/cove-spike  sb-1116162025-feature  ecde11db  1       push to sb-1116162025-feature                                                           new branch
+    gitcove-sandbox/cove-spike  sb-1116162025-diverge  ec230223  1       push gitcove/sb-1116162025-diverge-20261116-162114, open PR into sb-1116162025-diverge  diverged from GitHub
+    
+    Branches this replay pushes to GitHub. Each push can start workflows there:
+      gitcove-sandbox/cove-spike:sb-1116162025-feature
+      gitcove-sandbox/cove-spike:gitcove/sb-1116162025-diverge-20261116-162114
+    
+    GitHub is checked again before each push, so an action can still become a PR or a conflict, never the reverse.
+    
+    Changes to issues and PRs: 1 new issues, 1 new PRs, 1 comments, 0 label changes, 1 closes or reopens, 1 edits, 1 reviews, 0 replies to line comments, 1 local merges.
+    About 7 writes to GitHub, taking at least 7s at the write budget.
+    ID  REPO                        CHANGE                                                       ON   BY     POSTED AS  STATUS
+    5   gitcove-sandbox/cove-spike  new issue "sb-1116162025 new issue"                          L-1  ben    the App    ready
+    6   gitcove-sandbox/cove-spike  new PR "sb-1116162025 PR" (sb-1116162025-feature into main)  L-2  ben    the App    waits for the push to sb-1116162025-feature, which is pending
+    3   gitcove-sandbox/cove-spike  comment                                                      23   ben    the App    ready
+    8   gitcove-sandbox/cove-spike  note that it was merged into main on GitCove                 L-2  alice  the App    waits for L-2, which is pending
+    9   gitcove-sandbox/cove-spike  close                                                        L-1  alice  the App    waits for L-1, which is pending
+    4   gitcove-sandbox/cove-spike  edit title                                                   23   ben    the App    ready
+    7   gitcove-sandbox/cove-spike  review (approve, 1 line comments) of ecde11db                L-2  alice  the App    waits for L-2, which is pending
+    
+    Approve with: cove replay approve
+Replay approved: the server replays now, re-checking GitHub before each push.
+killed GitCove with 1 item(s) mid-send
+replay of 9 changes took 26 s, including the kill and restart
+    Mode: normal
+    
+    Nothing to replay.
+## checks against GitHub
+ok   mode
+ok   main didn't move
+ok   feature branch has the developer's commit
+ok   diverged branch still has GitHub's commit
+ok   the outage commit is on one fallback branch
+ok   one PR for the fallback branch
+ok   one PR for the feature
+ok   comment posted once
+ok   GitHub's title kept
+ok   the other title proposed in a comment
+ok   new issue posted once
+ok   PR body names the new issue's real number
+ok   one review
+ok   one line comment, on the reviewed commit
+ok   no approval counts: the reviewer never linked an account
+ok   one note that it was merged on GitCove
+ok   PR still open for a person to merge
+ok   after a sync GitCove serves exactly GitHub's branches and tags
+## sb-1116162025: 0 failed

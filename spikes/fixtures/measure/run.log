@@ -1,0 +1,56 @@
+### measure run at 2026-11-16T16:23:55Z
+## a 100 MB repo: 200 commits of 500 KB of incompressible data
+remote: 
+remote: Create a pull request for 'sb-bulk' on GitHub by visiting:        
+remote:      https://github.com/gitcove-sandbox/cove-test/pull/new/sb-bulk        
+remote: 
+pushed to GitHub in 7.9 s
+first sync (backup) of every repo took 38.9 s; data is  82M
+second sync, nothing changed: 13.9 s
+## replay of 100 comments and 5 new branches
+token 1 created; this is the only time its secret is shown:
+Failover started: GitCove accepts pushes. Developers' agents switch them to GitCove; without one, `cove client on`.
+{"time":"2026-11-16T17:25:44.275749+01:00","level":"ERROR","msg":"ALERT: failover started. GitHub is down, so Git goes to GitCove: the agent switches you, or run `cove client on`. Pushes are saved and sent to GitHub when it's back; default-branch work arrives as a PR."}
+{"time":"2026-11-16T17:25:48.05223+01:00","level":"ERROR","msg":"ALERT: failover ended. Push to GitHub again: the agent switches you back, or run `cove client off`. Work pushed to GitCove reaches GitHub once the admin approves the replay."}
+Replay approved: the server replays now, re-checking GitHub before each push.
+replay took 116.9 s
+comments on GitHub: 100 (want 100)
+### measure run at 2026-11-16T16:28:00Z
+token 1 created; this is the only time its secret is shown:
+## polling every 5m: 20 commits at random moments
+230.4
+264.8
+293.8
+239.2
+230.1
+### measure run at 2026-11-16T16:58:31Z
+token 1 created; this is the only time its secret is shown:
+## polling every 5m: 40 new branches on GitHub, one every 97 s, so they fall all over the sync cycle
+0.8 120.0 22.9 218.1 239.0 44.6 141.9 163.4 66.8 261.0 87.4 282.0 185.0 109.8 12.9 303.9 206.7 231.1 37.9 135.0 254.5 60.5 157.6 179.1 82.8 276.9 200.4 297.7 6.8 103.8 221.5 27.4 124.8 243.6 49.8 147.6 70.8 265.0 168.0 288.6 
+n=40 median=152.6s p95=288.6s max=303.9s
+API requests over 1.13 h with 3 repos: 560 ({'200': 349, '201': 2, '304': 209}), 165 per repo per hour, 103 not counting 304s
+## webhook hints: 20 commits, each followed by a signed delivery
+### measure run at 2026-11-16T18:26:00Z
+token 1 created; this is the only time its secret is shown:
+## webhook hints: 20 commits, each followed by a signed delivery
+14.2
+3.5
+1.9
+2.3
+2.5
+2.9
+2.1
+3.3
+3.2
+1.9
+1.9
+3.2
+3.5
+2.2
+3.6
+2.2
+2.4
+2.0
+2.4
+2.5
+n=20 median=2.5s p95=3.6s max=14.2s

@@ -3,3 +3,5 @@
 spikes
 data
 *.md
+!THIRD_PARTY_NOTICES.md
+release

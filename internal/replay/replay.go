@@ -137,6 +137,13 @@ func (r *Replayer) decide(ctx context.Context, pol store.Policy, a *Action) erro
 			fallback = it.Target
 		}
 	}
+	// A conflict after the fallback was sent (more pushes in a second outage, then a workflow
+	// change, say) leaves that branch, and maybe its PR, on GitHub: the admin must hear of it.
+	defer func() {
+		if a.Kind == Conflict && fallback != "" {
+			a.Reason += ". Earlier commits of this branch were already sent to " + fallback + " on GitHub, which may have an open PR"
+		}
+	}()
 	on, err := r.Git.GitHubBranchesContaining(ctx, id, a.Tip)
 	if err != nil {
 		return err

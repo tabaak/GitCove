@@ -109,8 +109,8 @@ func pullCampaign(t *testing.T, seed uint64, degraded bool) {
 			case 0: // push work and open a PR for it
 				b := pick([]string{"d1", "d2", "d3"})
 				work(t, dev, b, fmt.Sprintf("%s-%d.txt", b, rng.IntN(1e6)))
-				if out, err := push(dev, b); err != nil && degraded && !strings.Contains(out, "GitCove:") {
-					continue // a sync moved the branch on GitCove meanwhile
+				if out, err := push(dev, b); err != nil && degraded && (!strings.Contains(out, "GitCove:") || strings.Contains(out, "cannot lock ref")) {
+					continue // a sync moved the branch on GitCove meanwhile, before or just after the hook
 				} else if err != nil {
 					t.Fatalf("push %s: %s", b, out)
 				}
@@ -304,6 +304,13 @@ func pullCampaign(t *testing.T, seed uint64, degraded bool) {
 	for _, s := range plan {
 		waits[s.ID] = s.Waits
 	}
+	uncertainPosted := 0
+	for _, it := range items {
+		if it.State == "uncertain" && posted[it.OpID] > 0 {
+			uncertainPosted++
+		}
+	}
+	t.Logf("uncertain items already on GitHub (a blind retry would have duplicated them): %d", uncertainPosted)
 	for _, it := range items {
 		n := posted[it.OpID]
 		silent := it.Kind == "label" || (it.Kind == "state" || it.Kind == "edit") && it.Target != "note" ||

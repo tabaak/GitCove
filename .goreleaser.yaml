@@ -1,0 +1,20 @@
+# Binaries, checksums and SBOMs. The image is built by .github/workflows/release.yml.
+version: 2
+project_name: gitcove
+builds:
+  - main: ./cmd/cove
+    binary: cove
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: ["-s -X main.version={{ .Version }}"]
+archives:
+  - files: [LICENSE, README.md, THIRD_PARTY_NOTICES.md]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+checksum:
+  name_template: checksums.txt
+sboms:
+  - artifacts: archive
