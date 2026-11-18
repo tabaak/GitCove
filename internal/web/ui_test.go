@@ -35,7 +35,7 @@ func TestUI(t *testing.T) {
 	if err := st.SetLabels(ctx, repoID, []string{"bug"}); err != nil {
 		t.Fatal(err)
 	}
-	_, tok, err := st.CreateToken(ctx, "test", "ben", []string{"org/app"})
+	tokID, tok, err := st.CreateToken(ctx, "test", "ben", []string{"org/app"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,5 +128,16 @@ func TestUI(t *testing.T) {
 	}
 	if _, body := do("GET", "/org/app/issues/1", nil); strings.Contains(body, "label + bug") || strings.Contains(body, "label - bug") {
 		t.Errorf("label toggled back to how GitHub has it is still listed as queued: %s", body)
+	}
+
+	// Avatars come from GitHub for GitHub logins only: carol wrote #1 there; "ben" is a token name.
+	if _, body := do("GET", "/org/app/issues/1", nil); !strings.Contains(body, "https://github.com/carol.png") || strings.Contains(body, "github.com/ben") {
+		t.Errorf("avatars before authorising: %s", body)
+	}
+	if err := st.SaveUserToken(ctx, "test", "test", store.UserToken{TokenID: tokID, Login: "ben-gh", Access: []byte{0}, Refresh: []byte{0}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, body := do("GET", "/org/app/issues/1", nil); !strings.Contains(body, "https://github.com/ben-gh.png") {
+		t.Errorf("no avatar for the authorised viewer: %s", body)
 	}
 }
