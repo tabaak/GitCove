@@ -216,7 +216,8 @@ func TestFailoverEndToEnd(t *testing.T) {
 		}
 		t.Fatalf("%d notifications, want %d: one per switch", got, n)
 	}
-	devEnv := append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "GIT_CONFIG_GLOBAL="+gitcfg, "GIT_TERMINAL_PROMPT=0",
+	// NOSYSTEM: Xcode's Git adds osxkeychain, which stores test tokens in the real keychain and can wait on a dialog forever.
+	devEnv := append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "GIT_CONFIG_GLOBAL="+gitcfg, "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0",
 		"COVE_TOKEN="+tok, "HOME="+home, "XDG_CONFIG_HOME="+home, // HOME: the agent's lock, apart from any real agent here
 		"GIT_AUTHOR_NAME=ben", "GIT_AUTHOR_EMAIL=ben@example.invalid", "GIT_COMMITTER_NAME=ben", "GIT_COMMITTER_EMAIL=ben@example.invalid")
 	run := func(dir, name string, args ...string) string {
