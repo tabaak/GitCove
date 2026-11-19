@@ -6,6 +6,7 @@ A release is a tag. `.github/workflows/release.yml` does the rest: the multi-arc
 
 - [ ] Push the repo to `github.com/tabaak/gitcove`. Until then CI has never run: every "runs in CI" and "nightly" claim in `plan.md` has only been run locally.
 - [ ] Let CI pass on `main`, including one scheduled nightly run.
+- [ ] Give a fine-grained token with **Contents: write** on `tabaak/homebrew-tap` (the tap hop already uses), saved as the `HOMEBREW_TAP_GITHUB_TOKEN` secret of `tabaak/gitcove`. GoReleaser writes the `cove` cask there on each release.
 - [ ] In the repo's settings, turn on private vulnerability reporting (the README points there), and after the first release make the `gitcove` package public.
 
 ## Each release

@@ -33,9 +33,9 @@ jobs:
           sbom: true
           provenance: true
           build-args: VERSION=${{ github.ref_name }}
-          tags: |
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
-            ghcr.io/${{ github.repository }}:latest
+          tags: | # image names must be lowercase, and the repo is tabaak/GitCove
+            ghcr.io/tabaak/gitcove:${{ github.ref_name }}
+            ghcr.io/tabaak/gitcove:latest
       - uses: anchore/sbom-action/download-syft@v0 # GoReleaser's sboms step runs syft
       - uses: goreleaser/goreleaser-action@v6
         with:
@@ -43,9 +43,10 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }} # GITHUB_TOKEN can't push to tabaak/homebrew-tap
       - name: source of the image's GPL packages
         run: |
-          release/gpl-sources.sh "ghcr.io/${{ github.repository }}:${{ github.ref_name }}" "$RUNNER_TEMP/gitcove-gpl-sources.tar.gz"
+          release/gpl-sources.sh "ghcr.io/tabaak/gitcove:${{ github.ref_name }}" "$RUNNER_TEMP/gitcove-gpl-sources.tar.gz"
           gh release upload "${{ github.ref_name }}" "$RUNNER_TEMP/gitcove-gpl-sources.tar.gz"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

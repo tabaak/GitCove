@@ -58,9 +58,10 @@ Without Docker: download a binary from the releases page, or build one with Go 1
 docker exec gitcove cove token create -name alice -repo my-org/api -repo my-org/web   # prints the token once
 ```
 
-**5. Each developer sets up once,** with the `cove` binary from the releases page (see [For developers](#for-developers)):
+**5. Each developer sets up once** (see [For developers](#for-developers)). Install `cove` with Homebrew, or download the binary from the releases page:
 
 ```sh
+brew install tabaak/tap/cove
 COVE_TOKEN=<token> cove client setup -url https://gitcove.example.com -org my-org
 ```
 

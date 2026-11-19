@@ -18,3 +18,20 @@ checksum:
   name_template: checksums.txt
 sboms:
   - artifacts: archive
+homebrew_casks:
+  - name: cove
+    repository:
+      owner: tabaak
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: https://github.com/tabaak/gitcove
+    description: Keep working through a GitHub outage, then replay it back
+    license: Apache-2.0
+    hooks:
+      post:
+        # the binary isn't notarized, so Gatekeeper would refuse to run it
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/cove"],
+                                  writable_paths: ["cove"]
+          end
