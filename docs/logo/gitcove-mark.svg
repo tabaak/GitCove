@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="256" height="256" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <title>GitCove</title>
+  <circle cx="32" cy="12" r="6" stroke="#0f8b8d" stroke-width="4"/>
+  <path d="M32 18 V54 M22 28 H42 M10 38 C10 50 20 56 32 56 C44 56 54 50 54 38 M4 43 L10 35 L16 43 M48 43 L54 35 L60 43" stroke="#0b2530" stroke-width="4"/>
+</svg>
