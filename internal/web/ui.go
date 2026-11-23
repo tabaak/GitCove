@@ -23,7 +23,7 @@ import (
 //go:embed templates.html
 var templateFS embed.FS
 
-var tmpl = template.Must(template.New("").Funcs(template.FuncMap{"when": when, "dict": dict}).ParseFS(templateFS, "templates.html"))
+var tmpl = template.Must(template.New("").Funcs(template.FuncMap{"when": when, "dict": dict, "esc": pathEsc, "ghLogin": ghLogin, "size": size}).ParseFS(templateFS, "templates.html"))
 
 // when shows an RFC 3339 timestamp as "2 Jan 2026, 15:04 UTC", or as given if it doesn't parse.
 func when(s string) string {
@@ -59,6 +59,7 @@ type page struct {
 	Down     []string // GitHub's paths that failed the last health check
 	OnTheWay int      // changes still to replay to GitHub
 	Tab      string   // the template being rendered, so the header can mark its tab
+	PR       bool     // the page is about pull requests, so the header marks that tab rather than Issues
 	Data     any
 }
 
@@ -196,8 +197,10 @@ type row struct {
 	Labels              []string
 }
 
+// issues lists issues, or at /pulls pull requests, as GitHub's tabs do.
 func (s *Server) issues(w http.ResponseWriter, r *http.Request, p *page) error {
 	ctx := r.Context()
+	p.PR = strings.HasSuffix(r.URL.Path, "/pulls")
 	want := r.URL.Query().Get("state")
 	if want != "closed" && want != "all" {
 		want = "open"
@@ -208,8 +211,8 @@ func (s *Server) issues(w http.ResponseWriter, r *http.Request, p *page) error {
 	}
 	var rows []row
 	for _, it := range items {
-		if it.Kind == "issue" && want != "closed" {
-			rows = append(rows, row{Ref: it.Issue, Num: it.Issue, Title: it.Change.Title, State: "open", Badge: status(it.State), Labels: it.Change.Labels})
+		if it.Kind == "issue" && want != "closed" && (it.Change.Head != "") == p.PR { // a queued PR is an issue with a head branch
+			rows = append(rows, row{Ref: it.Issue, Num: it.Issue, Title: it.Change.Title, State: "open", Badge: status(it.State), IsPR: p.PR, Labels: it.Change.Labels})
 		}
 	}
 	mirrored, err := s.Store.Issues(ctx, p.Repo.ID)
@@ -217,7 +220,7 @@ func (s *Server) issues(w http.ResponseWriter, r *http.Request, p *page) error {
 		return err
 	}
 	for _, i := range mirrored {
-		if want == "all" || i.State == want {
+		if (want == "all" || i.State == want) && i.IsPR == p.PR {
 			rows = append(rows, row{Ref: strconv.Itoa(i.Number), Num: "#" + strconv.Itoa(i.Number), Title: i.Title, State: i.State, IsPR: i.IsPR, Labels: i.Labels})
 		}
 	}
@@ -372,7 +375,7 @@ func (s *Server) issue(w http.ResponseWriter, r *http.Request, p *page) error {
 		http.Redirect(w, r, fmt.Sprintf("/%s/issues/%d", p.Repo.FullName(), n), http.StatusSeeOther)
 		return nil
 	}
-	p.Data = th
+	p.Data, p.PR = th, th.IsPR
 	return s.render(w, "issue", p)
 }
 

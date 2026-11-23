@@ -114,6 +114,16 @@ func TestPullRequestFlow(t *testing.T) {
 		t.Fatalf("new PR at %s", loc)
 	}
 	ok(e.post(t, e.tok, repo+"/pulls", url.Values{"head": {"clash"}, "title": {"Clash"}}))
+
+	// Issues and pull requests, mirrored or queued, each list under their own tab.
+	for path, want := range map[string][2]string{"/issues": {"login breaks", "a feature"}, "/pulls": {"a feature", "login breaks"}} {
+		if pg := e.page(t, e.tok, repo+path); !strings.Contains(pg, want[0]) || strings.Contains(pg, want[1]) || strings.Contains(pg, "Fix login") != (path == "/pulls") {
+			t.Fatalf("GET %s: %s", path, pg)
+		}
+	}
+	if pg := e.page(t, e.tok, repo+"/issues/L-1"); !strings.Contains(pg, `href="`+repo+`/pulls" aria-current="page"`) {
+		t.Fatalf("a PR's page doesn't mark the Pull requests tab: %s", pg)
+	}
 	refused("needs 1 approval")(e.post(t, aliceTok, repo+"/issues/L-1/merge", nil))
 
 	if files := e.page(t, aliceTok, repo+"/issues/L-1/files"); !strings.Contains(files, `name="c|RIGHT|1|fix.txt"`) || !strings.Contains(files, fix) {

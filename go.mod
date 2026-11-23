@@ -2,9 +2,14 @@ module github.com/tabaak/gitcove
 
 go 1.26.0
 
-require modernc.org/sqlite v1.62.0
+require (
+	github.com/alecthomas/chroma/v2 v2.20.0
+	github.com/yuin/goldmark v1.8.7
+	modernc.org/sqlite v1.62.0
+)
 
 require (
+	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect

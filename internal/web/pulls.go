@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html/template"
 	"net/http"
 	"regexp"
 	"slices"
@@ -22,7 +23,8 @@ type diffLine struct {
 	Kind     string // "+", "-", " " or "@" for a hunk header
 	Old, New int    // line numbers, 0 where the line doesn't exist
 	Text     string
-	Field    string // form field name for a comment on this line, "" if it can't take one
+	HTML     template.HTML // Text coloured
+	Field    string        // form field name for a comment on this line, "" if it can't take one
 }
 
 type diffFile struct {
@@ -88,6 +90,14 @@ func parseDiff(text string) diffView {
 			old++
 			cur++
 			n++
+		}
+	}
+	for _, f := range v.Files {
+		l := lexer(f.Path)
+		for i, d := range f.Lines {
+			if h := highlight(l, d.Text); d.Kind != "@" && len(h) > 0 {
+				f.Lines[i].HTML = h[0]
+			}
 		}
 	}
 	return v

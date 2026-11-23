@@ -3,6 +3,8 @@ package gitstore
 import (
 	"context"
 	"errors"
+	"io/fs"
+	"os"
 	"strings"
 )
 
@@ -42,8 +44,11 @@ func (s *Store) Diff(ctx context.Context, githubID int64, base, head string) (st
 // BranchInfo is a served branch and its last commit.
 type BranchInfo struct{ Name, Commit, When, Subject string }
 
-// Branches lists the served branches, most recently committed first.
+// Branches lists the served branches, most recently committed first; none before the repo's first sync.
 func (s *Store) Branches(ctx context.Context, githubID int64) ([]BranchInfo, error) {
+	if _, err := os.Stat(s.Dir(githubID)); errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
 	out, err := s.run(ctx, s.Dir(githubID), nil, "for-each-ref", "--sort=-committerdate",
 		"--format=%(refname:lstrip=2)%00%(objectname)%00%(committerdate:iso8601-strict)%00%(subject)", "refs/heads/")
 	var list []BranchInfo
