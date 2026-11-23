@@ -431,10 +431,12 @@ func TestWebhookEndToEnd(t *testing.T) {
 		}
 	}
 	before := x.hub.Refs(t, "app")["refs/heads/main"]
+	started := time.Now() // the first cycle can finish before the server first answers
 	srvLog, _, _ := x.serve(t)
-	var first string
-	x.waitStatus(t, srvLog, "server up", func(s status) bool { first = s.OldestSynced; return s.Repos == 1 })
-	x.waitStatus(t, srvLog, "the first cycle", func(s status) bool { return s.OldestSynced != first })
+	x.waitStatus(t, srvLog, "the first cycle", func(s status) bool {
+		at, err := time.Parse(time.RFC3339Nano, s.OldestSynced)
+		return err == nil && at.After(started)
+	})
 	next := x.hub.Commit(t, "app", "main")
 
 	body := fmt.Sprintf(`{"ref":"refs/heads/main","before":%q,"after":%q,"repository":{"id":%d}}`, before, next, fakehub.RepoID("app"))
