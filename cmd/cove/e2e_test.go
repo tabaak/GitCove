@@ -61,7 +61,7 @@ func start(t *testing.T) *e2e {
 		t.Fatal(err)
 	}
 	addr := ln.Addr().String()
-	ln.Close()
+	_ = ln.Close()
 
 	env := append(os.Environ(), "COVE_ORG="+hub.Org, "COVE_APP_ID="+hub.AppID, "COVE_APP_KEY_FILE="+keyFile,
 		"COVE_APP_CLIENT_ID="+fakehub.ClientID, "COVE_APP_CLIENT_SECRET_FILE="+secretFile, "COVE_USER_KEY_FILE="+userKeyFile,
@@ -93,7 +93,7 @@ func (x *e2e) serve(t *testing.T) (*bytes.Buffer, chan error, *exec.Cmd) {
 	}
 	done := make(chan error, 1)
 	go func() { done <- srv.Wait() }()
-	t.Cleanup(func() { srv.Process.Kill() })
+	t.Cleanup(func() { _ = srv.Process.Kill() })
 	return &srvLog, done, srv
 }
 
@@ -112,7 +112,7 @@ func (x *e2e) waitStatus(t *testing.T, srvLog *bytes.Buffer, what string, ok fun
 			continue
 		}
 		var s status
-		json.NewDecoder(resp.Body).Decode(&s)
+		_ = json.NewDecoder(resp.Body).Decode(&s)
 		resp.Body.Close()
 		if ok(s) {
 			return
@@ -163,7 +163,7 @@ func TestBinaryEndToEnd(t *testing.T) {
 		t.Fatal("clone with a revoked token succeeded")
 	}
 
-	srv.Process.Signal(syscall.SIGTERM)
+	_ = srv.Process.Signal(syscall.SIGTERM)
 	select {
 	case err := <-done:
 		if err != nil {

@@ -102,7 +102,7 @@ func TestAlerts(t *testing.T) {
 	// Flapping, slow and erroring for 40 minutes: one hint at degraded mode, no outage alert.
 	r.run(80, down, true)
 	r.run(30, fakehub.Faults{Delay: 200 * time.Millisecond}, false)
-	r.run(30, fakehub.Faults{ErrorRate: 0.4}, false)
+	r.run(30, fakehub.Faults{ErrorRate: 1}, true) // random errors could leave a path unanswered for AlertAfter
 	if len(r.alerts) != 1 || !strings.Contains(r.alerts[0], "slow or flaky") || !strings.Contains(r.alerts[0], "20% over 5m0s") ||
 		!strings.Contains(r.alerts[0], "cove degraded start") {
 		t.Fatalf("alerts for a flaky GitHub that kept answering: %q", r.alerts)

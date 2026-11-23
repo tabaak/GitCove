@@ -164,7 +164,7 @@ func agent(every time.Duration) error {
 	if err != nil {
 		return err
 	}
-	defer lock.Close() // keeps the lock held, and the file alive, while the agent runs
+	defer func() { _ = lock.Close() }() // keeps the lock held, and the file alive, while the agent runs
 	base, org, err := clientConfig()
 	if err != nil {
 		return err

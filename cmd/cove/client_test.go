@@ -19,12 +19,12 @@ func TestLockFile(t *testing.T) {
 	if _, err := lockFile(path); !errors.Is(err, errLocked) {
 		t.Fatalf("second lock: %v, want errLocked", err)
 	}
-	f.Close() // as when the agent exits
+	_ = f.Close() // as when the agent exits
 	f, err = lockFile(path)
 	if err != nil {
 		t.Fatalf("lock after release: %v", err)
 	}
-	f.Close()
+	_ = f.Close()
 }
 
 func TestTaskXML(t *testing.T) {

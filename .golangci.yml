@@ -19,4 +19,5 @@ linters:
         - fmt.Fprintf
         - fmt.Fprintln
         - io.Copy
+        - os.Remove
         - os.RemoveAll

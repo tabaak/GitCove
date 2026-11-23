@@ -74,7 +74,7 @@ var md = goldmark.New(goldmark.WithExtensions(extension.GFM))
 // branch, as on GitHub.
 func markdown(src, repo, branch, dir string) (template.HTML, error) {
 	doc := md.Parser().Parse(gmtext.NewReader([]byte(src)))
-	ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if l, ok := n.(*ast.Link); ok && entering {
 			u, err := url.Parse(string(l.Destination))
 			if err == nil && u.Scheme == "" && u.Host == "" && u.Path != "" && !strings.HasPrefix(u.Path, "/") {
