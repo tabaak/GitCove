@@ -55,6 +55,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /{owner}/{repo}/issues/{ref}/files", s.ui(s.files))
 	mux.HandleFunc("GET /{owner}/{repo}/pulls", s.ui(s.issues))
 	mux.HandleFunc("GET /{owner}/{repo}/branches", s.ui(s.branches))
+	mux.HandleFunc("GET /{owner}/{repo}/changes", s.ui(s.changes))
 	mux.HandleFunc("GET /{owner}/{repo}/compare", s.ui(s.compare))
 	mux.HandleFunc("POST /{owner}/{repo}/pulls", s.ui(s.createPull))
 	mux.HandleFunc("POST /{owner}/{repo}/issues/{ref}/{action}", s.ui(s.act))

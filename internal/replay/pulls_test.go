@@ -165,6 +165,13 @@ func TestPullRequestFlow(t *testing.T) {
 	if pg := e.page(t, e.tok, repo+"/issues/1"); !strings.Contains(pg, "closed by merging L-1 on GitCove") {
 		t.Errorf("linked issue page: %s", pg)
 	}
+	pg := e.page(t, e.tok, repo+"/changes")
+	for _, want := range []string{`href="` + repo + `/changes" aria-current="page"`, "created", `<code class="branch">fix</code>`,
+		"opened pull request", "Fix login", "approved pull request", "merged pull request", "into main on GitCove", "closed issue", `aria-label="Approval"`, "queued"} {
+		if !strings.Contains(pg, want) {
+			t.Errorf("changes page lacks %q: %s", want, pg)
+		}
+	}
 	mustGit(t, dev, "fetch", "-q", "origin")
 	mustGit(t, dev, "checkout", "-q", "-B", "direct", "origin/main") // contains the merge, so the push would fast-forward
 	mustGit(t, dev, "commit", "-q", "--allow-empty", "-m", "straight to main")
