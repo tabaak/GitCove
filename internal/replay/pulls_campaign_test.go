@@ -300,9 +300,18 @@ func pullCampaign(t *testing.T, seed uint64, degraded bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	waits := map[int64]string{}
+	waits, newIssue := map[int64]string{}, map[string]int64{}
 	for _, s := range plan {
 		waits[s.ID] = s.Waits
+		if s.Kind == "issue" {
+			newIssue["waits for "+s.Issue+", which is pending"] = s.ID
+		}
+	}
+	// A change to a new issue or PR that waits for a human waits for that human too.
+	for id, w := range waits {
+		if l, ok := newIssue[w]; ok {
+			waits[id] = waits[l]
+		}
 	}
 	uncertainPosted := 0
 	for _, it := range items {
