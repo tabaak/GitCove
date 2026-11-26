@@ -1,0 +1,34 @@
+{
+  "brand": "GitCove",
+  "tagline": "Keep working while GitHub is down",
+  "brief": "A self-hosted mirror of a GitHub organisation that developers keep working on during an outage, and that replays their work to GitHub safely afterwards.",
+  "adjectives": ["safe", "calm", "dependable", "friendly"],
+  "criteria": "Success: not another letter G or cloud, distinct among developer tools, clear at 16 px, works in one colour and on dark backgrounds.",
+  "industry": "developer-tools",
+  "nav": ["Docs", "Install", "GitHub"],
+  "brand_color": "#0f8b8d",
+  "tile_color": "#0b2530",
+  "greyscale": false,
+  "final": true,
+  "concepts": [
+    {
+      "name": "Paper boat",
+      "symbol": "gitcove-symbol.svg",
+      "lockup": "gitcove-horizontal.svg",
+      "stacked": "gitcove-stacked.svg",
+      "symbol_on_tile": "gitcove-symbol-dark.svg",
+      "symbol_on_dark": "gitcove-symbol-dark.svg",
+      "lockup_on_dark": "gitcove-horizontal-dark.svg",
+      "stacked_on_tile": "gitcove-stacked-dark.svg",
+      "stacked_on_dark": "gitcove-stacked-dark.svg",
+      "idea": "A folded paper boat that keeps your work afloat until GitHub is back.",
+      "rationale": [
+        "An object, not a letter: nothing like Google's G or GitHub's cat",
+        "Folded paper says made by hand, light and friendly; the boat says safe passage",
+        "Four flat facets, clean angles; a two-colour cut for 16-48 px"
+      ]
+    }
+  ],
+  "recommendation": "Paper boat: friendly and distinct among developer tools, and it reads at favicon size.",
+  "next_steps": ["Replace the old anchor files in docs/logo", "Add the favicon and header logo to the web interface", "Trademark search before wider use"]
+}

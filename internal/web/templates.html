@@ -25,12 +25,14 @@
 {{define "i-triangle-down"}}<svg class="octicon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="m4.427 7.427 3.396 3.396a.25.25 0 0 0 .354 0l3.396-3.396A.25.25 0 0 0 11.396 7H4.604a.25.25 0 0 0-.177.427Z"/></svg>{{end}}
 {{define "i-book"}}<svg class="octicon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M0 1.75A.75.75 0 0 1 .75 1h4.253c1.227 0 2.317.59 3 1.501A3.743 3.743 0 0 1 11.006 1h4.245a.75.75 0 0 1 .75.75v10.5a.75.75 0 0 1-.75.75h-4.507a2.25 2.25 0 0 0-1.591.659l-.622.621a.75.75 0 0 1-1.06 0l-.622-.621A2.25 2.25 0 0 0 5.258 13H.75a.75.75 0 0 1-.75-.75Zm7.251 10.324.004-5.073-.002-2.253A2.25 2.25 0 0 0 5.003 2.5H1.5v9h3.757a3.75 3.75 0 0 1 1.994.574ZM8.755 4.75l-.004 7.322a3.752 3.752 0 0 1 1.992-.572H14.5v-9h-3.495a2.25 2.25 0 0 0-2.25 2.25Z"/></svg>{{end}}
 {{define "i-commit"}}<svg class="octicon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M11.93 8.5a4.002 4.002 0 0 1-7.86 0H.75a.75.75 0 0 1 0-1.5h3.32a4.002 4.002 0 0 1 7.86 0h3.32a.75.75 0 0 1 0 1.5Zm-1.43-.75a2.5 2.5 0 1 0-5 0 2.5 2.5 0 0 0 5 0Z"/></svg>{{end}}
+{{define "logo"}}<svg class="logo" viewBox="28 26 200 200" width="24" height="24" aria-hidden="true"><path fill="var(--boat-sail)" d="M128 40 L80 168 H128 Z"/><path fill="var(--boat-sail2)" d="M128 40 V168 H176 Z"/><path fill="var(--boat-hull)" d="M28 124 L128 166 V212 H78.8 Z"/><path fill="var(--boat-hull2)" d="M228 124 L128 166 V212 H177.2 Z"/></svg>{{end}}
 {{define "head"}}<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{if .Repo.Name}}{{.Repo.FullName}} · {{end}}GitCove</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='28 26 200 200'%3E%3Cstyle%3E@media (prefers-color-scheme:dark){.h{fill:%23e6edf3}}%3C/style%3E%3Cpath fill='%230f8b8d' d='M128 40 L80 168 H176 Z'/%3E%3Cpath class='h' fill='%230b2530' d='M28 124 L128 166 L228 124 L177.2 212 H78.8 Z'/%3E%3C/svg%3E">
 <style>
   :root {
     --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --bg: #fff; --subtle: #f6f8fa; --header: #f6f8fa; --accent: #0969da;
@@ -40,6 +42,7 @@
     --label: #818b981f; --hover: #818b981a; --nav-line: #fd8c73; --overlay: #fff; --shadow: #424a5333;
     --hl-k: #cf222e; --hl-s: #0a3069; --hl-c: #59636e; --hl-m: #0550ae; --hl-f: #8250df; --hl-t: #953800; --hl-tag: #116329;
     --dir: #54aeff; --add: #dafbe1; --add-n: #aceebb; --del: #ffebe9; --del-n: #ffcecb; --hunk: #ddf4ff; --hunk-n: #b6e3ff;
+    --boat-sail: #0f8b8d; --boat-sail2: #5fbcb6; --boat-hull: #0b2530; --boat-hull2: #1d4250;
   }
   @media (prefers-color-scheme: dark) { :root {
     --fg: #d1d7e0; --muted: #9198a1; --line: #3d444d; --bg: #212830; --subtle: #262c36; --header: #151b23; --accent: #478be6;
@@ -49,6 +52,7 @@
     --label: #656c7633; --hover: #656c7633; --overlay: #2a313c; --shadow: #010409cc;
     --hl-k: #f47067; --hl-s: #96d0ff; --hl-c: #768390; --hl-m: #6cb6ff; --hl-f: #dcbdfb; --hl-t: #f69d50; --hl-tag: #8ddb8c;
     --dir: #478be6; --add: #46954a26; --add-n: #57ab5a4d; --del: #e5534b1a; --del-n: #e5534b66; --hunk: #4184e41a; --hunk-n: #4184e466;
+    --boat-sail: #1fa8a6; --boat-sail2: #8fdcd6; --boat-hull: #c5d3d9; --boat-hull2: #ffffff;
   } }
   * { box-sizing: border-box; }
   body { margin: 0; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; color: var(--fg); background: var(--bg); }
@@ -300,7 +304,7 @@
 <body>
 <header class="app-header">
   <div class="top">
-    <nav class="crumbs" aria-label="Breadcrumb"><a class="home" href="/">GitCove</a>{{if .Repo.Name}}<span class="sep">/</span><a href="/{{.Repo.FullName}}">{{.Repo.Owner}}</a><span class="sep">/</span><a href="/{{.Repo.FullName}}"><strong>{{.Repo.Name}}</strong></a>{{end}}</nav>
+    <nav class="crumbs" aria-label="Breadcrumb"><a class="home" href="/">{{template "logo"}}GitCove</a>{{if .Repo.Name}}<span class="sep">/</span><a href="/{{.Repo.FullName}}">{{.Repo.Owner}}</a><span class="sep">/</span><a href="/{{.Repo.FullName}}"><strong>{{.Repo.Name}}</strong></a>{{end}}</nav>
     {{if .User.Name}}<details class="user-menu">
       <summary aria-label="Account menu"><span class="avatar md">{{template "avatar" .User.GitHub}}</span></summary>
       <div class="menu">

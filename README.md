@@ -1,4 +1,4 @@
-# GitCove
+<h1><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logo/kit/gitcove-horizontal-dark.svg"><img src="docs/logo/kit/gitcove-horizontal.svg" alt="GitCove" width="300"></picture></h1>
 
 A self-hosted mirror of your GitHub organisation that your team can keep working on while GitHub is down. When GitHub is back, GitCove replays that work to it.
 
