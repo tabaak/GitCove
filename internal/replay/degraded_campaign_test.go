@@ -17,7 +17,7 @@ import (
 // TestDegradedCampaign runs the push and PR campaigns in degraded mode (milestone 5's exit):
 // GitHub answers slowly or flakily instead of being down, and replay runs in the background, with
 // kills, while people push, open PRs, review, reply and merge. It checks what those campaigns
-// check: all six of plan section 3. COVE_SEEDS sets the number of seeds (default 10; nightly 200).
+// check: all six of plan section 3. COVE_SEEDS sets the number of seeds (default 10; nightly 40).
 // Repeat one with: COVE_SEEDS=N go test -run 'TestDegradedCampaign/pulls/seed=K$' ./internal/replay
 func TestDegradedCampaign(t *testing.T) {
 	seeds := 10

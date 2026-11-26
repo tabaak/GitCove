@@ -21,7 +21,7 @@ import (
 // then runs with the faults of TestIssueCampaign. Afterwards it checks all six of plan section
 // 3: nothing lost (R2), nothing duplicated (R3), GitHub's refs move only by fast-forward and
 // never main (R1, R4), no approval but a person's own for the exact commit (R7), and a full sync
-// agrees. COVE_SEEDS sets the number of seeds (default 10; the nightly run uses 200).
+// agrees. COVE_SEEDS sets the number of seeds (default 10; the nightly run uses 40).
 // Repeat one with: COVE_SEEDS=N go test -run 'TestPullCampaign/seed=K$' ./internal/replay
 func TestPullCampaign(t *testing.T) {
 	seeds := 10

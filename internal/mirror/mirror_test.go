@@ -219,7 +219,7 @@ func TestRecoversFromCutFetch(t *testing.T) {
 
 // TestFaultCampaign runs seeded rounds of GitHub faults and GitHub-side changes. After every round
 // the store must be intact, and once faults stop one cycle must bring it level with GitHub.
-// COVE_SEEDS sets the number of seeds (default 10; the nightly run uses 200).
+// COVE_SEEDS sets the number of seeds (default 10; the nightly run uses 40).
 // Repeat one with: COVE_SEEDS=N go test -run 'TestFaultCampaign/seed=K$' ./internal/mirror
 func TestFaultCampaign(t *testing.T) {
 	seeds := 10

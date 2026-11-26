@@ -19,7 +19,7 @@ import (
 // TestReplayCampaign runs seeded failovers: developers push while GitHub is down and GitHub moves
 // on, then replay runs with faults, kills at every crash point, lost responses and repeat outages.
 // Afterwards it checks R1 to R4 and that a full sync agrees (plan section 3, checks 1, 2, 3 and 6).
-// COVE_SEEDS sets the number of seeds (default 10; the nightly run uses 200).
+// COVE_SEEDS sets the number of seeds (default 10; the nightly run uses 40).
 // Repeat one with: COVE_SEEDS=N go test -run 'TestReplayCampaign/seed=K$' ./internal/replay
 func TestReplayCampaign(t *testing.T) {
 	seeds := 10

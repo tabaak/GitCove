@@ -22,7 +22,7 @@ import (
 // Replay then runs with faults: 500s, timeouts, lost responses, rate limits, listings that lag
 // behind writes by more than the marker wait, kills at each crash point, and repeat outages.
 // Afterwards it checks R2, R3, R5 and R7 and that a full sync agrees (plan section 3, checks 1,
-// 2, 4, 5 and 6). COVE_SEEDS sets the number of seeds (default 10; the nightly run uses 200).
+// 2, 4, 5 and 6). COVE_SEEDS sets the number of seeds (default 10; the nightly run uses 40).
 // Repeat one with: COVE_SEEDS=N go test -run 'TestIssueCampaign/seed=K$' ./internal/replay
 func TestIssueCampaign(t *testing.T) {
 	seeds := 10

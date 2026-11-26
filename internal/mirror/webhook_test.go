@@ -90,7 +90,7 @@ func (e *env) hubState(t *testing.T, name string) map[string]string {
 // dropped, repeated or delivered out of order, and syncs only what webhooks ask for. A repo whose
 // every webhook got through must match GitHub, except items deleted while every "deleted" webhook
 // was dropped; then one full sync must bring everything level, and a second must change nothing.
-// COVE_SEEDS sets the number of seeds (default 10; the nightly run uses 200).
+// COVE_SEEDS sets the number of seeds (default 10; the nightly run uses 40).
 func TestWebhookCampaign(t *testing.T) {
 	seeds := 10
 	if s, err := strconv.Atoi(os.Getenv("COVE_SEEDS")); err == nil {
