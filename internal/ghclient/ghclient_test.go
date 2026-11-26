@@ -54,6 +54,15 @@ func TestAppAgainstFakehub(t *testing.T) {
 	}
 }
 
+func TestPersonalAccountInstallation(t *testing.T) {
+	hub := fakehub.New(t, 1)
+	hub.Personal = true
+	a := &App{API: hub.URL, AppID: hub.AppID, Key: hub.Key, Org: hub.Org, HTTP: hub.Client()}
+	if _, err := a.GitToken(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestPagination(t *testing.T) {
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

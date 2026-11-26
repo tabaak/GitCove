@@ -98,12 +98,12 @@ type StatusError struct {
 
 func (e *StatusError) Error() string { return fmt.Sprintf("github: %d %s", e.Status, e.Message) }
 
-// App authenticates as a GitHub App installation on one organisation.
+// App authenticates as a GitHub App installation on one organisation or personal account.
 type App struct {
 	API   string // base URL, e.g. https://api.github.com
 	AppID string
 	Key   *rsa.PrivateKey
-	Org   string
+	Org   string // organisation or personal account login
 	HTTP  *http.Client
 
 	// For acting as people (decision D3): GitHub's web host, for the device flow and refreshing
@@ -184,7 +184,12 @@ func (a *App) GitToken(ctx context.Context) (string, error) {
 		var inst struct {
 			ID int64 `json:"id"`
 		}
-		if err := a.call(ctx, "GET", a.API+"/orgs/"+a.Org+"/installation", jwt, &inst); err != nil {
+		err := a.call(ctx, "GET", a.API+"/orgs/"+a.Org+"/installation", jwt, &inst)
+		var se *StatusError
+		if errors.As(err, &se) && se.Status == http.StatusNotFound { // not an organisation: try a personal account
+			err = a.call(ctx, "GET", a.API+"/users/"+a.Org+"/installation", jwt, &inst)
+		}
+		if err != nil {
 			return "", fmt.Errorf("find installation: %w", err)
 		}
 		a.instID = inst.ID

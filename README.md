@@ -1,6 +1,6 @@
 <h1><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logo/kit/gitcove-horizontal-dark.svg"><img src="docs/logo/kit/gitcove-horizontal.svg" alt="GitCove" width="300"></picture></h1>
 
-A self-hosted mirror of your GitHub organisation that your team can keep working on while GitHub is down. When GitHub is back, GitCove replays that work to it.
+A self-hosted mirror of your GitHub organisation (or personal account) that your team can keep working on while GitHub is down. When GitHub is back, GitCove replays that work to it.
 
 During an outage developers push branches to GitCove and, in its web interface, comment, open issues and PRs, review and merge. Replay never force-pushes, sends default-branch work only as a PR, never posts anything twice and never overwrites newer work on GitHub, even if GitCove crashes partway through.
 
@@ -22,15 +22,15 @@ During an outage developers push branches to GitCove and, in its web interface, 
 
 ## Install
 
-You need a Linux server with Docker, enough disk for every repo, and owner rights on the GitHub organisation.
+You need a Linux server with Docker, enough disk for every repo, and owner rights on the GitHub organisation, or a personal GitHub account.
 
-**1. Create a GitHub App** (organisation settings → Developer settings → GitHub Apps → New GitHub App):
+**1. Create a GitHub App** (organisation settings → Developer settings → GitHub Apps → New GitHub App; for a personal account, your own Settings → Developer settings → GitHub Apps):
 
 - Name: anything, e.g. `cove-my-org`. Homepage URL: anything.
 - Webhook: untick **Active**.
 - Repository permissions: **Contents**, **Issues** and **Pull requests**, all read and write. Nothing else.
 
-Create it, note the **App ID**, generate a private key (a `.pem` file downloads), then install the App on your organisation.
+Create it, note the **App ID**, generate a private key (a `.pem` file downloads), then install the App on your organisation or personal account. With a personal account, set `COVE_ORG` below to your username.
 
 **2. Run GitCove:**
 

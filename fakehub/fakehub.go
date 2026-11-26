@@ -81,6 +81,8 @@ type Hub struct {
 	Root  string          // bare repos at Root/<org>/<name>.git
 	SSH   string          // host:port of an SSH greeting, for health probes; it serves nothing else
 
+	Personal bool // Org is a personal account: the App is found under /users, not /orgs
+
 	NotModified atomic.Int64  // 304 responses sent
 	AccessTTL   time.Duration // lifetime of user access tokens, default 8 hours
 
@@ -119,6 +121,7 @@ func New(t testing.TB, seed uint64) *Hub {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /orgs/{org}/installation", h.app(h.installation))
+	mux.HandleFunc("GET /users/{org}/installation", h.app(h.installation))
 	mux.HandleFunc("POST /app/installations/{id}/access_tokens", h.app(h.accessToken))
 	mux.HandleFunc("GET /installation/repositories", h.inst(h.repos))
 	mux.HandleFunc("GET /rate_limit", func(w http.ResponseWriter, r *http.Request) {
@@ -290,12 +293,17 @@ func (h *Hub) validToken(tok string) bool {
 }
 
 func (h *Hub) installation(w http.ResponseWriter, r *http.Request) {
-	if r.PathValue("org") != h.Org {
+	kind := "Organization"
+	if h.Personal {
+		kind = "User"
+	}
+	// GitHub's /users/{name}/installation also finds org installations; /orgs/{name} only finds orgs.
+	if r.PathValue("org") != h.Org || (h.Personal && strings.HasPrefix(r.URL.Path, "/orgs/")) {
 		h.json(w, r, http.StatusNotFound, map[string]any{"message": "Not Found"})
 		return
 	}
-	h.json(w, r, http.StatusOK, map[string]any{"id": 4242, "app_id": 1, "target_type": "Organization",
-		"account": map[string]any{"login": h.Org, "type": "Organization"}})
+	h.json(w, r, http.StatusOK, map[string]any{"id": 4242, "app_id": 1, "target_type": kind,
+		"account": map[string]any{"login": h.Org, "type": kind}})
 }
 
 func (h *Hub) accessToken(w http.ResponseWriter, r *http.Request) {
