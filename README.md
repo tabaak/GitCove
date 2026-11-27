@@ -29,7 +29,11 @@ Sending that work back to GitHub (the "replay") is safe, even if GitCove crashes
 
 ## Install
 
-You need a Linux server with Docker, enough disk for every repo, and owner rights on the GitHub organisation, or a personal GitHub account.
+You need:
+
+- A Linux server with Docker and enough disk for every repo. Ports 80 and 443 must be reachable from the internet.
+- A domain name where you can add DNS records.
+- Owner rights on the GitHub organisation, or a personal GitHub account.
 
 **1. Create a GitHub App**
 
@@ -45,11 +49,17 @@ Fill in:
 
 Create it, note the **App ID**, generate a private key (a `.pem` file downloads), then install the App on your organisation or personal account.
 
-**2. Run GitCove**
+**2. Point a domain name at the server**
+
+Choose the address developers will use to reach GitCove, such as `gitcove.example.com`. At the DNS provider for your domain, add an A record for that name, with your server's public IPv4 address as the value (your hosting provider's dashboard shows it). If the server also has a public IPv6 address, add an AAAA record for it as well.
+
+Step 3 uses this name to get an HTTPS certificate automatically.
+
+**3. Run GitCove**
 
 Copy the `.pem` file to your server, then log in to the server.
 
-Change the three example values, then paste these lines into the server's terminal:
+Change the four example values, then paste these lines into the server's terminal:
 
 ```sh
 # Your organisation name, or your username for a personal account
@@ -58,6 +68,8 @@ ORG=my-org
 APP_ID=123456
 # Where the .pem file is on the server
 KEY=./your-app.private-key.pem
+# The domain name from step 2
+DOMAIN=gitcove.example.com
 ```
 
 Then paste this into the same terminal, without changing anything:
@@ -67,22 +79,32 @@ sudo install -o 10001 -m 600 "$KEY" /etc/gitcove-app.pem &&
 sudo docker run -d --name gitcove --restart unless-stopped -p 127.0.0.1:8418:8418 \
   -v gitcove-data:/data -v /etc/gitcove-app.pem:/run/app.pem:ro \
   -e COVE_ORG="$ORG" -e COVE_APP_ID="$APP_ID" -e COVE_APP_KEY_FILE=/run/app.pem \
-  ghcr.io/tabaak/gitcove:latest
+  ghcr.io/tabaak/gitcove:latest &&
+sudo docker run -d --name caddy --restart unless-stopped --network host \
+  -v caddy-data:/data caddy:2 \
+  caddy reverse-proxy --from "$DOMAIN" --to localhost:8418
 ```
 
-Mirroring starts right away; `curl localhost:8418/status` shows progress. Keep `/data` on a Docker volume as above, not a network share.
+This starts two containers: `gitcove`, and `caddy`, which serves it over HTTPS and gets and renews the certificate for your domain. Keep `/data` on a Docker volume as above, not a network share.
 
-No Docker? Download `cove` from the releases page, install `git` (with `git-http-backend`), and run `cove serve` with the same variables.
-
-In the next steps, replace `my-org` with your `ORG` value.
-
-**3. Set up HTTPS**
-
-Developers must connect over HTTPS (TLS). One way is [Caddy](https://caddyserver.com):
+Mirroring starts right away. To check that everything works, run:
 
 ```sh
-caddy reverse-proxy --from gitcove.example.com --to localhost:8418
+curl https://$DOMAIN/status
 ```
+
+It shows mirroring progress. Getting the first certificate can take a minute. If it still fails after that, `sudo docker logs caddy` shows why. The two usual causes:
+
+- The DNS record doesn't point at the server yet. New records can take a while to show up. From your own computer, `dig +short gitcove.example.com` (with your domain) should print the server's IP.
+- Ports 80 or 443 are blocked. Some hosting providers block them until you allow them in their firewall settings.
+
+Caddy keeps retrying on its own, but waits longer between attempts. Once you've fixed the cause, `sudo docker restart caddy` retries right away.
+
+To use nginx or your own certificate instead of Caddy, see [`docs/https.md`](docs/https.md).
+
+No Docker? Download `cove` from the releases page, install `git` (with `git-http-backend`), run `cove serve` with the same `COVE_` variables as above, and set up HTTPS as in [`docs/https.md`](docs/https.md).
+
+In the next steps, replace `my-org` with your `ORG` value and `gitcove.example.com` with your `DOMAIN` value.
 
 **4. Create a token for each developer**
 
