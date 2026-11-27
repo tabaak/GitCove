@@ -1,0 +1,18 @@
+name: gpl-sources
+
+# Tests release/gpl-sources.sh on GitHub's runners without releasing anything: before this, it first ran there during a release.
+on:
+  push:
+    paths: [release/gpl-sources.sh, .github/workflows/gpl-sources.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gpl-sources:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: collect the sources for a published image
+        run: release/gpl-sources.sh ghcr.io/tabaak/gitcove:v0.9.9 "$RUNNER_TEMP/gitcove-gpl-sources.tar.gz"
