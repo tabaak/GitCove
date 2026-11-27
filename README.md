@@ -35,6 +35,8 @@ You need:
 - A domain name where you can add DNS records.
 - Owner rights on the GitHub organisation, or a personal GitHub account.
 
+> **Already running Caddy, nginx or another web server on this server?** GitCove's install starts its own Caddy, which can't share ports 80 and 443 with yours. Add GitCove to your existing web server instead: step 3 shows how.
+
 **1. Create a GitHub App**
 
 For an organisation, go to: organisation settings → Developer settings → GitHub Apps → New GitHub App.
@@ -72,20 +74,37 @@ KEY=./your-app.private-key.pem
 DOMAIN=gitcove.example.com
 ```
 
-Then paste this into the same terminal, without changing anything:
+Then paste this into the same terminal, without changing anything. It starts GitCove:
 
 ```sh
 sudo install -o 10001 -m 600 "$KEY" /etc/gitcove-app.pem &&
 sudo docker run -d --name gitcove --restart unless-stopped -p 127.0.0.1:8418:8418 \
   -v gitcove-data:/data -v /etc/gitcove-app.pem:/run/app.pem:ro \
   -e COVE_ORG="$ORG" -e COVE_APP_ID="$APP_ID" -e COVE_APP_KEY_FILE=/run/app.pem \
-  ghcr.io/tabaak/gitcove:latest &&
+  ghcr.io/tabaak/gitcove:latest
+```
+
+Keep `/data` on a Docker volume as above, not a network share.
+
+Next, set up HTTPS. **If the server already runs a web server**, add GitCove to it instead of starting Caddy:
+
+- **Caddy**: add this block to your Caddyfile (usually `/etc/caddy/Caddyfile`), with your domain, then run `sudo systemctl reload caddy`. If your Caddy runs in Docker, `localhost` there is its own container: attach GitCove to Caddy's Docker network (`sudo docker network connect <network> gitcove`) and use `gitcove:8418` instead.
+
+  ```
+  gitcove.example.com {
+  	reverse_proxy localhost:8418
+  }
+  ```
+
+- **nginx**: follow the nginx section of [`docs/https.md`](docs/https.md).
+
+Otherwise, paste this, also without changing anything. It starts [Caddy](https://caddyserver.com), which serves GitCove over HTTPS and gets and renews the certificate for your domain:
+
+```sh
 sudo docker run -d --name caddy --restart unless-stopped --network host \
   -v caddy-data:/data caddy:2 \
   caddy reverse-proxy --from "$DOMAIN" --to localhost:8418
 ```
-
-This starts two containers: `gitcove`, and `caddy`, which serves it over HTTPS and gets and renews the certificate for your domain. Keep `/data` on a Docker volume as above, not a network share.
 
 Mirroring starts right away. To check that everything works, run:
 
@@ -93,10 +112,11 @@ Mirroring starts right away. To check that everything works, run:
 curl https://$DOMAIN/status
 ```
 
-It shows mirroring progress. Getting the first certificate can take a minute. If it still fails after that, `sudo docker logs caddy` shows why. The two usual causes:
+It shows mirroring progress. Getting the first certificate can take a minute. If it still fails after that, `sudo docker logs caddy` shows why (or your own web server's logs). The usual causes:
 
 - The DNS record doesn't point at the server yet. New records can take a while to show up. From your own computer, `dig +short gitcove.example.com` (with your domain) should print the server's IP.
 - Ports 80 or 443 are blocked. Some hosting providers block them until you allow them in their firewall settings.
+- Another web server already uses ports 80 and 443: the log says `address already in use`. Remove the container with `sudo docker rm -f caddy` and add GitCove to your web server as described above.
 
 Caddy keeps retrying on its own, but waits longer between attempts. Once you've fixed the cause, `sudo docker restart caddy` retries right away.
 
