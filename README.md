@@ -64,7 +64,7 @@ Then paste this into the same terminal, without changing anything:
 
 ```sh
 sudo install -o 10001 -m 600 "$KEY" /etc/gitcove-app.pem &&
-docker run -d --name gitcove --restart unless-stopped -p 127.0.0.1:8080:8080 \
+sudo docker run -d --name gitcove --restart unless-stopped -p 127.0.0.1:8080:8080 \
   -v gitcove-data:/data -v /etc/gitcove-app.pem:/run/app.pem:ro \
   -e COVE_ORG="$ORG" -e COVE_APP_ID="$APP_ID" -e COVE_APP_KEY_FILE=/run/app.pem \
   ghcr.io/tabaak/gitcove:latest
@@ -89,7 +89,7 @@ caddy reverse-proxy --from gitcove.example.com --to localhost:8080
 This example gives `alice` access to two repos:
 
 ```sh
-docker exec gitcove cove token create -name alice -repo my-org/api -repo my-org/web
+sudo docker exec gitcove cove token create -name alice -repo my-org/api -repo my-org/web
 ```
 
 **5. Set up each developer's computer**
@@ -108,9 +108,9 @@ To upgrade, back up the volume, pull the new image and restart the container.
 ## During an outage
 
 ```sh
-docker exec gitcove cove failover start   # GitHub is down: developers work on GitCove
-docker exec gitcove cove failover end     # GitHub is back: prints what will be replayed
-docker exec gitcove cove replay approve   # send it to GitHub
+sudo docker exec gitcove cove failover start   # GitHub is down: developers work on GitCove
+sudo docker exec gitcove cove failover end     # GitHub is back: prints what will be replayed
+sudo docker exec gitcove cove replay approve   # send it to GitHub
 ```
 
 Run through this once as a drill before you need it. For a GitHub that is slow rather than down, see degraded mode in the reference.
