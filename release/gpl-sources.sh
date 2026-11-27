@@ -10,7 +10,8 @@ installed=$(docker run --rm --entrypoint apk "$image" list -I | grep 'GPL')
 origins=$(echo "$installed" | sed 's/.* {\(.*\)} (.*/\1/' | sort -u | tr '\n' ' ')
 docker run --rm -i "alpine:$ver" sh -euc '
   apk add -q alpine-sdk >&2
-  git clone -q --depth 1 -b '"$ver"'-stable https://gitlab.alpinelinux.org/alpine/aports.git /aports
+  # GitHub mirror: gitlab.alpinelinux.org answered the release runner with HTTP 418
+  git clone -q --depth 1 -b '"$ver"'-stable https://github.com/alpinelinux/aports.git /aports
   mkdir /src && cd /src
   cat > INSTALLED
   for p in '"$origins"'; do
