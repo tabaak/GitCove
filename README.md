@@ -64,13 +64,13 @@ Then paste this into the same terminal, without changing anything:
 
 ```sh
 sudo install -o 10001 -m 600 "$KEY" /etc/gitcove-app.pem &&
-sudo docker run -d --name gitcove --restart unless-stopped -p 127.0.0.1:8080:8080 \
+sudo docker run -d --name gitcove --restart unless-stopped -p 127.0.0.1:8418:8418 \
   -v gitcove-data:/data -v /etc/gitcove-app.pem:/run/app.pem:ro \
   -e COVE_ORG="$ORG" -e COVE_APP_ID="$APP_ID" -e COVE_APP_KEY_FILE=/run/app.pem \
   ghcr.io/tabaak/gitcove:latest
 ```
 
-Mirroring starts right away; `curl localhost:8080/status` shows progress. Keep `/data` on a Docker volume as above, not a network share.
+Mirroring starts right away; `curl localhost:8418/status` shows progress. Keep `/data` on a Docker volume as above, not a network share.
 
 No Docker? Download `cove` from the releases page, install `git` (with `git-http-backend`), and run `cove serve` with the same variables.
 
@@ -81,7 +81,7 @@ In the next steps, replace `my-org` with your `ORG` value.
 Developers must connect over HTTPS (TLS). One way is [Caddy](https://caddyserver.com):
 
 ```sh
-caddy reverse-proxy --from gitcove.example.com --to localhost:8080
+caddy reverse-proxy --from gitcove.example.com --to localhost:8418
 ```
 
 **4. Create a token for each developer**

@@ -15,6 +15,6 @@ COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/licenses/gitcove/
 USER cove
 ENV COVE_DATA=/data
 VOLUME /data
-EXPOSE 8080
+EXPOSE 8418
 ENTRYPOINT ["cove"]
 CMD ["serve"]

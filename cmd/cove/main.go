@@ -145,7 +145,7 @@ type config struct {
 func loadConfig() (config, error) {
 	c := config{
 		Data:    env("COVE_DATA", "./data"),
-		Listen:  env("COVE_LISTEN", ":8080"),
+		Listen:  env("COVE_LISTEN", ":8418"),
 		TLSCert: os.Getenv("COVE_TLS_CERT"),
 		TLSKey:  os.Getenv("COVE_TLS_KEY"),
 		API:     strings.TrimSuffix(env("COVE_GITHUB_API", "https://api.github.com"), "/"),

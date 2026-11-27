@@ -10,7 +10,7 @@ Everything the [README](../README.md) leaves out: configuration, every command, 
 | `COVE_APP_ID` | required | GitHub App ID |
 | `COVE_APP_KEY_FILE` | required | Path to the App's private key (PEM) |
 | `COVE_DATA` | `./data` (`/data` in the image) | Database and bare repos |
-| `COVE_LISTEN` | `:8080` | HTTP listen address |
+| `COVE_LISTEN` | `:8418` | HTTP listen address |
 | `COVE_TLS_CERT`, `COVE_TLS_KEY` | unset | Serve HTTPS directly |
 | `COVE_SYNC_INTERVAL` | `5m` | Time between sync cycles |
 | `COVE_HEALTH_INTERVAL` | `30s` | Time between GitHub health probes |
