@@ -2,7 +2,14 @@
 
 A self-hosted mirror of your GitHub organisation (or personal account) that your team can keep working on while GitHub is down. When GitHub is back, GitCove replays that work to it.
 
-During an outage developers push branches to GitCove and, in its web interface, comment, open issues and PRs, review and merge. Replay never force-pushes, sends default-branch work only as a PR, never posts anything twice and never overwrites newer work on GitHub, even if GitCove crashes partway through.
+During an outage, developers push branches to GitCove. In its web interface they can open issues and PRs, comment, review and merge.
+
+Sending that work back to GitHub (the "replay") is safe, even if GitCove crashes partway through:
+
+- It never force-pushes.
+- Work for the default branch arrives only as a PR.
+- Nothing is posted twice.
+- Newer work on GitHub is never overwritten.
 
 **Status: 1.0.** Test results are in [`docs/results.md`](docs/results.md), the story behind it in [`docs/writeup.md`](docs/writeup.md).
 
@@ -24,21 +31,42 @@ During an outage developers push branches to GitCove and, in its web interface, 
 
 You need a Linux server with Docker, enough disk for every repo, and owner rights on the GitHub organisation, or a personal GitHub account.
 
-**1. Create a GitHub App** (organisation settings → Developer settings → GitHub Apps → New GitHub App; for a personal account, your own Settings → Developer settings → GitHub Apps):
+**1. Create a GitHub App**
+
+For an organisation, go to: organisation settings → Developer settings → GitHub Apps → New GitHub App.
+
+For a personal account, go to: your own Settings → Developer settings → GitHub Apps → New GitHub App.
+
+Fill in:
 
 - Name: anything, e.g. `cove-my-org`. Homepage URL: anything.
 - Webhook: untick **Active**.
 - Repository permissions: **Contents**, **Issues** and **Pull requests**, all read and write. Nothing else.
 
-Create it, note the **App ID**, generate a private key (a `.pem` file downloads), then install the App on your organisation or personal account. With a personal account, set `COVE_ORG` below to your username.
+Create it, note the **App ID**, generate a private key (a `.pem` file downloads), then install the App on your organisation or personal account.
 
-**2. Run GitCove:**
+**2. Run GitCove**
+
+Copy the `.pem` file to your server, then log in to the server.
+
+Change the three example values, then paste these lines into the server's terminal:
 
 ```sh
-sudo install -o 10001 -m 600 cove-my-org.*.private-key.pem /etc/gitcove-app.pem
+# Your organisation name, or your username for a personal account
+ORG=my-org
+# The App ID (not the Client ID), found in the App's settings under General → About
+APP_ID=123456
+# Where the .pem file is on the server
+KEY=./your-app.private-key.pem
+```
+
+Then paste this into the same terminal, without changing anything:
+
+```sh
+sudo install -o 10001 -m 600 "$KEY" /etc/gitcove-app.pem &&
 docker run -d --name gitcove --restart unless-stopped -p 127.0.0.1:8080:8080 \
   -v gitcove-data:/data -v /etc/gitcove-app.pem:/run/app.pem:ro \
-  -e COVE_ORG=my-org -e COVE_APP_ID=123456 -e COVE_APP_KEY_FILE=/run/app.pem \
+  -e COVE_ORG="$ORG" -e COVE_APP_ID="$APP_ID" -e COVE_APP_KEY_FILE=/run/app.pem \
   ghcr.io/tabaak/gitcove:latest
 ```
 
@@ -46,19 +74,27 @@ Mirroring starts right away; `curl localhost:8080/status` shows progress. Keep `
 
 No Docker? Download `cove` from the releases page, install `git` (with `git-http-backend`), and run `cove serve` with the same variables.
 
-**3. Put TLS in front**, for example with [Caddy](https://caddyserver.com):
+In the next steps, replace `my-org` with your `ORG` value.
+
+**3. Set up HTTPS**
+
+Developers must connect over HTTPS (TLS). One way is [Caddy](https://caddyserver.com):
 
 ```sh
 caddy reverse-proxy --from gitcove.example.com --to localhost:8080
 ```
 
-**4. Create a token for each developer:**
+**4. Create a token for each developer**
+
+This example gives `alice` access to two repos:
 
 ```sh
 docker exec gitcove cove token create -name alice -repo my-org/api -repo my-org/web
 ```
 
-**5. Each developer runs once:**
+**5. Set up each developer's computer**
+
+Each developer runs this once, with their own token:
 
 ```sh
 brew install tabaak/tap/cove
